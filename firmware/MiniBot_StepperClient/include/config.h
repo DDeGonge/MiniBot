@@ -56,12 +56,12 @@
 // ============================================================================
 
 // Linear motion constraints
-#define ROBOT_MAX_VELOCITY_MM_S    200.0f   // Maximum linear velocity (mm/s) NOT USED
-#define ROBOT_MAX_ACCEL_MM_S2      250.0f    // Maximum linear acceleration (mm/s²)
+#define ROBOT_MAX_VELOCITY_MM_S    250.0f   // Maximum linear velocity (mm/s) NOT USED
+#define ROBOT_MAX_ACCEL_MM_S2      500.0f    // Maximum linear acceleration (mm/s²)
 
 // Rotational motion constraints
-#define MAX_ROT_VEL_RAD_S          2.0f     // Maximum angular velocity (rad/s)
-#define MAX_ROT_ACCEL_RAD_S2       5.0f    // Maximum angular acceleration (rad/s²)
+#define MAX_ROT_VEL_RAD_S          5.0f     // Maximum angular velocity (rad/s)
+#define MAX_ROT_ACCEL_RAD_S2       20.0f    // Maximum angular acceleration (rad/s²)
 
 // Stepper motor safety limit
 #define STEPPER_MAX_VELOCITY_MM_S  250.0f   // Stepper motor maximum velocity

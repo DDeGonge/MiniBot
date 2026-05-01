@@ -111,12 +111,12 @@ class BasePlanner(ABC):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def duration_for_distance(distance_mm: float, speed_mm_per_s: float = 80.0) -> int:
+    def duration_for_distance(distance_mm: float, speed_mm_per_s: float = 200.0) -> int:
         """Estimate a move duration in ms based on distance and nominal speed.
 
         Args:
             distance_mm:    Straight-line travel distance.
-            speed_mm_per_s: Nominal robot speed (default 80 mm/s).
+            speed_mm_per_s: Nominal robot speed (default 200 mm/s).
 
         Returns:
             Duration in milliseconds, clamped to a sensible minimum.

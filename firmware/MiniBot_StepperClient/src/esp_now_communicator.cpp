@@ -41,6 +41,7 @@ bool EspNowCommunicator_Init(MotionQueue motion_queue, MotorTestQueue motor_test
     
     WiFi.mode(WIFI_STA);
     delay(100);
+    // WiFi.setTxPower(WIFI_POWER);
     ESP_LOGD(TAG, "WiFi MAC: %s", WiFi.macAddress().c_str());
     
     if (esp_now_init() != ESP_OK) {
