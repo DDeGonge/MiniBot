@@ -6,8 +6,8 @@
 #define SERIAL_BAUD_RATE 921600
 
 // System config flags
-#define ENABLE_JOYSTICK_MODE  false
-#define ENABLE_WEB_GUI        true
+#define ENABLE_JOYSTICK_MODE  true
+#define ENABLE_WEB_GUI        false
 #define ENABLE_DEBUG_PRINTS   false
 
 // Random GPIO

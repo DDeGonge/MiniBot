@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include "config.h"
 #if ENABLE_JOYSTICK_MODE
   #include "JoystickTask.h"
@@ -33,6 +34,8 @@ void setup() {
   WiFi.softAP(ssid, password, wifiChannel);
   #else
   WiFi.mode(WIFI_STA);
+  // Fix channel for joystick mode so ESP-NOW uses the same channel as the bots
+  esp_wifi_set_channel(wifiChannel, WIFI_SECOND_CHAN_NONE);
   #endif
   
 
@@ -41,10 +44,11 @@ void setup() {
   
   // Initialize ESP-NOW
   initESPNow();
+  Serial.printf("[DIAG] WiFi channel: %d\n", WiFi.channel());
   
   #if ENABLE_JOYSTICK_MODE
   initJoystick();
-  DEBUG_PRINTLN("Running in JOYSTICK MODE");
+  Serial.println("[DIAG] Running in JOYSTICK MODE");
   #endif
   #if ENABLE_WEB_GUI
   initGUI();

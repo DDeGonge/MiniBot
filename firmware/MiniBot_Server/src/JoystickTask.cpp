@@ -96,6 +96,8 @@ void joystickTask(void *parameter) {
   
   DEBUG_PRINTLN("Joystick Task started");
   
+  static uint32_t lastDiagPrint = 0;
+
   while (true) {
     uint32_t currentTime = millis();
     uint16_t throttleRaw = analogRead(JOYSTICK_THROTTLE_PIN);
@@ -105,6 +107,14 @@ void joystickTask(void *parameter) {
                                           JOYSTICK_DEADZONE, JOYSTICK_THROTTLE_INVERT);
     float steeringInput = normalizeInput(steeringRaw, JOYSTICK_STEERING_CENTER, 
                                           JOYSTICK_DEADZONE, JOYSTICK_STEERING_INVERT);
+
+    // Periodic diagnostic: print raw ADC and normalized values every second
+    if (currentTime - lastDiagPrint >= 1000) {
+      Serial.printf("[JOY] Raw T:%d S:%d  Norm T:%.2f S:%.2f  timeSinceSend:%ums\n",
+                    throttleRaw, steeringRaw, throttleInput, steeringInput,
+                    (unsigned)(currentTime - state.lastSendTime));
+      lastDiagPrint = currentTime;
+    }
 
     // Determine if we should send a command
     bool shouldSend = false;
@@ -133,8 +143,9 @@ void joystickTask(void *parameter) {
         msg.data.motCmd.m0_vel = 0;
         msg.data.motCmd.m1_vel = 0;
         
+        Serial.printf("[JOY] Queuing STOP command\n");
         if (xQueueSend(commandQueue, &msg, pdMS_TO_TICKS(10)) != pdPASS) {
-          DEBUG_PRINTLN("Warning: Command queue full, dropping joystick stop command");
+          Serial.println("[JOY] WARNING: Command queue full, dropping stop command");
         }
       } else {
         int8_t m0_vel, m1_vel;
@@ -148,14 +159,11 @@ void joystickTask(void *parameter) {
         msg.data.motCmd.m0_vel = m0_vel;
         msg.data.motCmd.m1_vel = m1_vel;
 
-        // Debug output
-        if (shouldSend) {
-          DEBUG_PRINTF("Processed[T:%d, S:%d] -> Motors[M0:%d, M1:%d]\n", 
-                (int)throttleInput, (int)steeringInput, (int)m0_vel, (int)m1_vel);
-        }
+        Serial.printf("[JOY] Queuing cmd: T:%.2f S:%.2f -> M0:%d M1:%d\n",
+                      throttleInput, steeringInput, (int)m0_vel, (int)m1_vel);
         
         if (xQueueSend(commandQueue, &msg, pdMS_TO_TICKS(10)) != pdPASS) {
-          DEBUG_PRINTLN("Warning: Command queue full, dropping joystick command");
+          Serial.println("[JOY] WARNING: Command queue full, dropping command");
         }
       }
       

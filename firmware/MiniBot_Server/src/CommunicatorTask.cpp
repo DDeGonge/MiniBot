@@ -155,16 +155,16 @@ void communicatorTask(void *parameter) {
       if (msg.commandType == CMD_TYPE_MOT_TEST) {
         // Handle MotTestCommand (from Joystick or other sources)
         MotTestCommand *motCmd = &msg.data.motCmd;
-        DEBUG_PRINTF("Sending MotTestCommand to 0x%02X: M0=%d, M1=%d\n", 
-                     motCmd->targetID, motCmd->m0_vel, motCmd->m1_vel);
+        Serial.printf("[COMM] Dequeued MotTestCmd: target=0x%02X enabled=%d M0=%d M1=%d\n",
+                      motCmd->targetID, motCmd->enabled, motCmd->m0_vel, motCmd->m1_vel);
         
         // Send broadcast
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*)motCmd, sizeof(MotTestCommand));
         
         if (result == ESP_OK) {
-          DEBUG_PRINTLN("MotTestCommand broadcast sent");
+          Serial.println("[COMM] MotTestCommand broadcast OK");
         } else {
-          DEBUG_PRINTF("MotTestCommand send failed: %d\n", result);
+          Serial.printf("[COMM] MotTestCommand send FAILED: err=%d\n", result);
         }
       } else if (msg.commandType == CMD_TYPE_GUI) {
         // Handle GUICommand (from GUI)
