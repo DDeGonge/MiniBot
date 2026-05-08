@@ -9,8 +9,8 @@ void print_mag(Tlv493d);
 void print_mag(Tlv493d MagSensor)
 {
   MagSensor.updateData();
-  // Serial.printf("T: %d\tX: %.2f\tY: %.2f\tZ: %.2f\n", micros(), MagSensor.getX(), MagSensor.getY(), MagSensor.getZ());
-  Serial.printf("T: %d\tAZ: %.2f\tMAG: %.2f\n", micros(), MagSensor.getAzimuth(), MagSensor.getAmount());
+  Serial.printf("%.2f,%.2f,%.2f\n", MagSensor.getX(), MagSensor.getY(), MagSensor.getZ());
+  // Serial.printf("T: %d\tAZ: %.2f\tMAG: %.2f\n", micros(), MagSensor.getAzimuth(), MagSensor.getAmount());
 }
 
 void setup() {
@@ -23,13 +23,14 @@ void loop() {
   Wire.setClock(10000000);
   Tlv493d MagSensor = Tlv493d();
   MagSensor.begin(Wire);
-  MagSensor.setAccessMode(MagSensor.LOWPOWERMODE); // LOWPOWERMODE FASTMODE
-  MagSensor.disableTemp();
+  MagSensor.setAccessMode(MagSensor.FASTMODE); // LOWPOWERMODE FASTMODE
+  // MagSensor.disableTemp();
+  Serial.println("x,y,z");
 //  MagSensor.enableInterrupt();
-  Serial.println("SENSOR STARTED");
+  // Serial.println("SENSOR STARTED");
 
   while(true) {
     print_mag(MagSensor);
-    // delay(10);
+    delay(100);
   }
 }
