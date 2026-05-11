@@ -41,10 +41,11 @@ from planning.base_planner import MoveCommand
 from simulation.simulator import MotionSimulator
 
 from gui.chessboard_widget import ChessBoardWidget
-from gui.tabs.path_planning_tab   import PathPlanningTab
-from gui.tabs.debug_tab           import DebugTab
-from gui.tabs.system_control_tab  import SystemControlTab
+from gui.tabs.path_planning_tab    import PathPlanningTab
+from gui.tabs.debug_tab            import DebugTab
+from gui.tabs.system_control_tab   import SystemControlTab
 from gui.tabs.position_tracker_tab import PositionTrackerTab
+from gui.tabs.command_looper_tab   import CommandLooperTab
 
 # ---------------------------------------------------------------------------
 # Application-wide dark theme stylesheet
@@ -397,11 +398,13 @@ class MainWindow(QMainWindow):
         self._debug_tab  = DebugTab(self)
         self._sys_tab    = SystemControlTab(self)
         self._track_tab  = PositionTrackerTab(self._board, self)
+        self._looper_tab = CommandLooperTab(self)
 
-        self._tabs.addTab(self._path_tab,  'Path Planning')
-        self._tabs.addTab(self._debug_tab, 'Debug')
-        self._tabs.addTab(self._sys_tab,   'System Control')
-        self._tabs.addTab(self._track_tab, 'Position Tracker')
+        self._tabs.addTab(self._path_tab,   'Path Planning')
+        self._tabs.addTab(self._debug_tab,  'Debug')
+        self._tabs.addTab(self._sys_tab,    'System Control')
+        self._tabs.addTab(self._track_tab,  'Position Tracker')
+        self._tabs.addTab(self._looper_tab, 'Command Looper')
 
         right_layout.addWidget(self._tabs, stretch=1)
         layout.addWidget(right_widget, stretch=0)
@@ -433,6 +436,9 @@ class MainWindow(QMainWindow):
 
         # Position tracker → poll (always serial)
         self._track_tab.send_raw.connect(self._handler.send)
+
+        # Command looper → send (always serial)
+        self._looper_tab.send_raw.connect(self._handler.send)
 
         # Serial handler → board updates + UI
         self._handler.position_received.connect(self._on_position_received)
