@@ -15,8 +15,12 @@ from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from comms.protocol import build_position_request
@@ -33,16 +37,18 @@ class PositionTrackerTab(QWidget):
 
     send_raw = pyqtSignal(bytes)
 
-    _COL_ID      = 0
-    _COL_COLOR   = 1
-    _COL_RANK    = 2
-    _COL_X       = 3
-    _COL_Y       = 4
-    _COL_THETA   = 5
-    _COL_BATT    = 6
+    _COL_ID = 0
+    _COL_COLOR = 1
+    _COL_RANK = 2
+    _COL_X = 3
+    _COL_Y = 4
+    _COL_THETA = 5
+    _COL_BATT = 6
     _COL_UPDATED = 7
 
-    def __init__(self, board_state: BoardState, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, board_state: BoardState, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self._board = board_state
         self._build_ui()
@@ -57,7 +63,7 @@ class PositionTrackerTab(QWidget):
 
         # Toolbar
         btn_row = QHBoxLayout()
-        self._btn_poll = QPushButton('Poll Now')
+        self._btn_poll = QPushButton("Poll Now")
         self._btn_poll.setFixedWidth(90)
         self._btn_poll.clicked.connect(self._on_poll)
         btn_row.addWidget(self._btn_poll)
@@ -92,16 +98,18 @@ class PositionTrackerTab(QWidget):
         if piece is None:
             return
 
-        updated = datetime.datetime.fromtimestamp(piece.last_updated).strftime('%H:%M:%S.%f')[:-3]
+        updated = datetime.datetime.fromtimestamp(piece.last_updated).strftime(
+            "%H:%M:%S.%f"
+        )[:-3]
 
         values = [
-            f'0x{piece.piece_id:02X}',
+            f"0x{piece.piece_id:02X}",
             piece.color.capitalize(),
             piece.rank.capitalize(),
-            f'{piece.x_mm:.1f}',
-            f'{piece.y_mm:.1f}',
-            f'{piece.orientation_deg:.1f}',
-            f'{piece.battery_v:.2f}' if piece.battery_v else '',
+            f"{piece.x_mm:.1f}",
+            f"{piece.y_mm:.1f}",
+            f"{piece.orientation_deg:.1f}",
+            f"{piece.battery_v:.2f}" if piece.battery_v else "",
             updated,
         ]
 
@@ -116,8 +124,9 @@ class PositionTrackerTab(QWidget):
 
         # Color-code by side
         from PyQt6.QtGui import QColor, QBrush
-        bg   = QColor('#2a2a2a') if piece.color == 'white' else QColor('#323232')
-        text = QColor('#d0d0d0')
+
+        bg = QColor("#2a2a2a") if piece.color == "white" else QColor("#323232")
+        text = QColor("#d0d0d0")
         for col in range(self._table.columnCount()):
             item = self._table.item(row, col)
             if item:
@@ -129,7 +138,14 @@ class PositionTrackerTab(QWidget):
     # ------------------------------------------------------------------
 
     @pyqtSlot(int, float, float, float, float)
-    def on_position_received(self, piece_id: int, x_mm: float, y_mm: float, theta_deg: float, battery_v: float) -> None:
+    def on_position_received(
+        self,
+        piece_id: int,
+        x_mm: float,
+        y_mm: float,
+        theta_deg: float,
+        battery_v: float,
+    ) -> None:
         """Update a row when a POS message arrives."""
         row = self._find_row(piece_id)
         if row is not None:

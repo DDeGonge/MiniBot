@@ -4,8 +4,8 @@
 #include "messages_ipc.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * Motor test queue handle - wrapper around FreeRTOS queue
@@ -46,7 +46,7 @@ uint16_t MotorTestQueue_GetSize(MotorTestQueue queue);
  * @param command Pointer to MotorTestRequest to enqueue
  * @return true on success, false if queue is full
  */
-bool MotorTestQueue_Enqueue(MotorTestQueue queue, MotorTestRequest* command);
+bool MotorTestQueue_Enqueue(MotorTestQueue queue, MotorTestRequest *command);
 
 /**
  * Add a command to the queue from ISR context
@@ -54,7 +54,8 @@ bool MotorTestQueue_Enqueue(MotorTestQueue queue, MotorTestRequest* command);
  * @param command Pointer to MotorTestRequest to enqueue
  * @return true on success, false if queue is full
  */
-bool MotorTestQueue_EnqueueFromISR(MotorTestQueue queue, MotorTestRequest* command);
+bool MotorTestQueue_EnqueueFromISR(MotorTestQueue queue,
+                                   MotorTestRequest *command);
 
 /**
  * Remove a command from the queue (blocking with timeout)
@@ -63,7 +64,8 @@ bool MotorTestQueue_EnqueueFromISR(MotorTestQueue queue, MotorTestRequest* comma
  * @param timeout_ms Maximum time to wait in milliseconds (0 for non-blocking)
  * @return true on success, false if queue is empty or timeout
  */
-bool MotorTestQueue_Dequeue(MotorTestQueue queue, MotorTestRequest* command, uint32_t timeout_ms);
+bool MotorTestQueue_Dequeue(MotorTestQueue queue, MotorTestRequest *command,
+                            uint32_t timeout_ms);
 
 /**
  * Destroy queue and free all resources

@@ -16,9 +16,20 @@ from typing import List, Optional
 
 from PyQt6.QtCore import QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QPushButton, QSpinBox, QSizePolicy,
-    QSplitter, QVBoxLayout, QWidget, QCheckBox,
+    QAbstractItemView,
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSpinBox,
+    QSizePolicy,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt
 
@@ -26,10 +37,11 @@ from PyQt6.QtCore import Qt
 @dataclass
 class LoopCommand:
     """One entry in the command loop list."""
-    x_mm:        float
-    y_mm:        float
+
+    x_mm: float
+    y_mm: float
     move_time_ms: int
-    delay_ms:    int  # wait after previous command before sending this one
+    delay_ms: int  # wait after previous command before sending this one
 
     def display_text(self) -> str:
         return (
@@ -46,7 +58,9 @@ class CommandLooperTab(QWidget):
         send_raw(bytes) — emit bytes to the serial handler
     """
 
-    request_move = pyqtSignal(int, float, float, int)  # piece_id, x_mm, y_mm, move_time_ms
+    request_move = pyqtSignal(
+        int, float, float, int
+    )  # piece_id, x_mm, y_mm, move_time_ms
 
     _BROADCAST_ID = 0xFF
 
@@ -73,13 +87,13 @@ class CommandLooperTab(QWidget):
         root.setSpacing(8)
 
         # ── Command entry form ────────────────────────────────────────
-        entry_group = QGroupBox('Add Command')
+        entry_group = QGroupBox("Add Command")
         form_layout = QVBoxLayout(entry_group)
         form_layout.setSpacing(6)
 
         # Row 1: X / Y
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel('X (mm):'))
+        row1.addWidget(QLabel("X (mm):"))
         self._spin_x = QDoubleSpinBox()
         self._spin_x.setRange(-9999.0, 9999.0)
         self._spin_x.setDecimals(1)
@@ -87,7 +101,7 @@ class CommandLooperTab(QWidget):
         self._spin_x.setValue(0.0)
         row1.addWidget(self._spin_x)
         row1.addSpacing(12)
-        row1.addWidget(QLabel('Y (mm):'))
+        row1.addWidget(QLabel("Y (mm):"))
         self._spin_y = QDoubleSpinBox()
         self._spin_y.setRange(-9999.0, 9999.0)
         self._spin_y.setDecimals(1)
@@ -99,14 +113,14 @@ class CommandLooperTab(QWidget):
 
         # Row 2: Move time / Command delay
         row3 = QHBoxLayout()
-        row3.addWidget(QLabel('Move Time (ms):'))
+        row3.addWidget(QLabel("Move Time (ms):"))
         self._spin_move_time = QSpinBox()
         self._spin_move_time.setRange(1, 60000)
         self._spin_move_time.setSingleStep(100)
         self._spin_move_time.setValue(1000)
         row3.addWidget(self._spin_move_time)
         row3.addSpacing(12)
-        row3.addWidget(QLabel('Command Delay (ms):'))
+        row3.addWidget(QLabel("Command Delay (ms):"))
         self._spin_delay = QSpinBox()
         self._spin_delay.setRange(0, 60000)
         self._spin_delay.setSingleStep(100)
@@ -117,7 +131,7 @@ class CommandLooperTab(QWidget):
 
         # Add button
         btn_add_row = QHBoxLayout()
-        self._btn_add = QPushButton('Add Command')
+        self._btn_add = QPushButton("Add Command")
         self._btn_add.clicked.connect(self._on_add_command)
         btn_add_row.addWidget(self._btn_add)
         btn_add_row.addStretch()
@@ -126,19 +140,23 @@ class CommandLooperTab(QWidget):
         root.addWidget(entry_group)
 
         # ── Command list ──────────────────────────────────────────────
-        list_group = QGroupBox('Command List')
+        list_group = QGroupBox("Command List")
         list_layout = QVBoxLayout(list_group)
 
         self._list_widget = QListWidget()
-        self._list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self._list_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         list_layout.addWidget(self._list_widget)
 
         btn_list_row = QHBoxLayout()
-        self._btn_remove = QPushButton('Remove Selected')
+        self._btn_remove = QPushButton("Remove Selected")
         self._btn_remove.clicked.connect(self._on_remove_command)
         btn_list_row.addWidget(self._btn_remove)
-        self._btn_clear = QPushButton('Clear All')
+        self._btn_clear = QPushButton("Clear All")
         self._btn_clear.clicked.connect(self._on_clear_commands)
         btn_list_row.addWidget(self._btn_clear)
         btn_list_row.addStretch()
@@ -147,16 +165,16 @@ class CommandLooperTab(QWidget):
         root.addWidget(list_group, stretch=1)
 
         # ── Loop control ──────────────────────────────────────────────
-        loop_group = QGroupBox('Loop Control')
+        loop_group = QGroupBox("Loop Control")
         loop_layout = QVBoxLayout(loop_group)
 
         # Target ID row
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel('Target ID (hex):'))
+        target_row.addWidget(QLabel("Target ID (hex):"))
         self._spin_target_id = QSpinBox()
         self._spin_target_id.setRange(0x00, 0xFF)
         self._spin_target_id.setDisplayIntegerBase(16)
-        self._spin_target_id.setPrefix('0x')
+        self._spin_target_id.setPrefix("0x")
         self._spin_target_id.setValue(self._BROADCAST_ID)
         target_row.addWidget(self._spin_target_id)
         target_row.addStretch()
@@ -164,13 +182,13 @@ class CommandLooperTab(QWidget):
 
         # Enable + status row
         enable_row = QHBoxLayout()
-        self._loop_check = QCheckBox('Enable Looping')
+        self._loop_check = QCheckBox("Enable Looping")
         self._loop_check.setChecked(False)
         self._loop_check.toggled.connect(self._on_loop_toggled)
         enable_row.addWidget(self._loop_check)
 
-        self._loop_status_label = QLabel('Stopped')
-        self._loop_status_label.setStyleSheet('color: #787878;')
+        self._loop_status_label = QLabel("Stopped")
+        self._loop_status_label.setStyleSheet("color: #787878;")
         enable_row.addSpacing(16)
         enable_row.addWidget(self._loop_status_label)
         enable_row.addStretch()
@@ -191,7 +209,7 @@ class CommandLooperTab(QWidget):
             delay_ms=self._spin_delay.value(),
         )
         self._commands.append(cmd)
-        item = QListWidgetItem(f'[{len(self._commands)}]  {cmd.display_text()}')
+        item = QListWidgetItem(f"[{len(self._commands)}]  {cmd.display_text()}")
         self._list_widget.addItem(item)
 
     @pyqtSlot()
@@ -240,16 +258,16 @@ class CommandLooperTab(QWidget):
     def _start_loop(self) -> None:
         self._looping = True
         self._loop_index = 0
-        self._loop_status_label.setText('Running…')
-        self._loop_status_label.setStyleSheet('color: #7cbb7c; font-weight: bold;')
+        self._loop_status_label.setText("Running…")
+        self._loop_status_label.setStyleSheet("color: #7cbb7c; font-weight: bold;")
         # Fire immediately for the first command (delay before first = its own delay_ms)
         self._schedule_next(self._commands[self._loop_index].delay_ms)
 
     def _stop_loop(self) -> None:
         self._looping = False
         self._loop_timer.stop()
-        self._loop_status_label.setText('Stopped')
-        self._loop_status_label.setStyleSheet('color: #787878;')
+        self._loop_status_label.setText("Stopped")
+        self._loop_status_label.setStyleSheet("color: #787878;")
         self._clear_highlight()
 
     def _schedule_next(self, delay_ms: int) -> None:
@@ -286,24 +304,26 @@ class CommandLooperTab(QWidget):
         for i, cmd in enumerate(self._commands):
             item = self._list_widget.item(i)
             if item:
-                item.setText(f'[{i + 1}]  {cmd.display_text()}')
+                item.setText(f"[{i + 1}]  {cmd.display_text()}")
 
     def _highlight_row(self, row: int) -> None:
         from PyQt6.QtGui import QColor, QBrush
+
         for i in range(self._list_widget.count()):
             item = self._list_widget.item(i)
             if item:
                 if i == row:
-                    item.setBackground(QBrush(QColor('#3a4a3a')))
-                    item.setForeground(QBrush(QColor('#c8e6c8')))
+                    item.setBackground(QBrush(QColor("#3a4a3a")))
+                    item.setForeground(QBrush(QColor("#c8e6c8")))
                 else:
-                    item.setBackground(QBrush(QColor('#272727')))
-                    item.setForeground(QBrush(QColor('#d0d0d0')))
+                    item.setBackground(QBrush(QColor("#272727")))
+                    item.setForeground(QBrush(QColor("#d0d0d0")))
 
     def _clear_highlight(self) -> None:
         from PyQt6.QtGui import QColor, QBrush
+
         for i in range(self._list_widget.count()):
             item = self._list_widget.item(i)
             if item:
-                item.setBackground(QBrush(QColor('#272727')))
-                item.setForeground(QBrush(QColor('#d0d0d0')))
+                item.setBackground(QBrush(QColor("#272727")))
+                item.setForeground(QBrush(QColor("#d0d0d0")))

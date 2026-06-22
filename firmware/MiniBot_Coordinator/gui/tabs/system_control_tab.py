@@ -15,8 +15,14 @@ from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt, QTimer
 from PyQt6.QtWidgets import (
-    QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from comms.protocol import build_electromagnet, build_sync
@@ -35,10 +41,10 @@ class SystemControlTab(QWidget):
     Note: serial connection controls live in the main window connection bar.
     """
 
-    send_raw              = pyqtSignal(bytes)
+    send_raw = pyqtSignal(bytes)
     poll_interval_changed = pyqtSignal(int)
-    poll_enabled_changed  = pyqtSignal(bool)
-    poll_target_changed   = pyqtSignal(int)
+    poll_enabled_changed = pyqtSignal(bool)
+    poll_target_changed = pyqtSignal(int)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -55,16 +61,16 @@ class SystemControlTab(QWidget):
         root.setSpacing(10)
 
         # --- Polling ---
-        poll_group = QGroupBox('Position Polling')
+        poll_group = QGroupBox("Position Polling")
         pl = QVBoxLayout(poll_group)
 
-        self._poll_enable_check = QCheckBox('Enable polling')
+        self._poll_enable_check = QCheckBox("Enable polling")
         self._poll_enable_check.setChecked(True)
         self._poll_enable_check.toggled.connect(self.poll_enabled_changed)
         pl.addWidget(self._poll_enable_check)
 
         poll_row = QHBoxLayout()
-        poll_row.addWidget(QLabel('Interval (ms):'))
+        poll_row.addWidget(QLabel("Interval (ms):"))
         self._poll_spin = QSpinBox()
         self._poll_spin.setRange(100, 60000)
         self._poll_spin.setSingleStep(100)
@@ -75,11 +81,11 @@ class SystemControlTab(QWidget):
         pl.addLayout(poll_row)
 
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel('Target ID (hex):'))
+        target_row.addWidget(QLabel("Target ID (hex):"))
         self._poll_target_spin = QSpinBox()
         self._poll_target_spin.setRange(0x00, 0xFF)
         self._poll_target_spin.setDisplayIntegerBase(16)
-        self._poll_target_spin.setPrefix('0x')
+        self._poll_target_spin.setPrefix("0x")
         self._poll_target_spin.setValue(0xFF)
         self._poll_target_spin.valueChanged.connect(self.poll_target_changed)
         target_row.addWidget(self._poll_target_spin)
@@ -89,10 +95,10 @@ class SystemControlTab(QWidget):
         root.addWidget(poll_group)
 
         # --- Electromagnets ---
-        mag_group = QGroupBox('Electromagnets')
+        mag_group = QGroupBox("Electromagnets")
         ml = QVBoxLayout(mag_group)
 
-        self._mag_check = QCheckBox('Enable Electromagnet')
+        self._mag_check = QCheckBox("Enable Electromagnet")
         self._mag_check.setChecked(False)
         self._mag_check.toggled.connect(self._on_mag_check)
         ml.addWidget(self._mag_check)
@@ -100,16 +106,16 @@ class SystemControlTab(QWidget):
         root.addWidget(mag_group)
 
         # --- Electromagnet Sync ---
-        sync_group = QGroupBox('Electromagnet Sync')
+        sync_group = QGroupBox("Electromagnet Sync")
         sl = QVBoxLayout(sync_group)
 
-        self._btn_mag_sync = QPushButton('Send Sync')
+        self._btn_mag_sync = QPushButton("Send Sync")
         self._btn_mag_sync.setMinimumHeight(36)
         self._btn_mag_sync.clicked.connect(self._on_mag_sync)
         sl.addWidget(self._btn_mag_sync)
 
         auto_row = QHBoxLayout()
-        self._auto_sync_check = QCheckBox('Auto-sync every')
+        self._auto_sync_check = QCheckBox("Auto-sync every")
         self._auto_sync_check.setChecked(False)
         self._auto_sync_check.toggled.connect(self._on_auto_sync_toggled)
         auto_row.addWidget(self._auto_sync_check)
@@ -117,7 +123,7 @@ class SystemControlTab(QWidget):
         self._auto_sync_spin.setRange(1, 3600)
         self._auto_sync_spin.setSingleStep(1)
         self._auto_sync_spin.setValue(5)
-        self._auto_sync_spin.setSuffix(' s')
+        self._auto_sync_spin.setSuffix(" s")
         self._auto_sync_spin.valueChanged.connect(self._on_auto_sync_interval_changed)
         auto_row.addWidget(self._auto_sync_spin)
         auto_row.addStretch()
@@ -135,7 +141,9 @@ class SystemControlTab(QWidget):
         self.poll_interval_changed.emit(interval_ms)
 
     def _on_mag_check(self, checked: bool) -> None:
-        self.send_raw.emit(build_electromagnet(COMM.MAG_ON if checked else COMM.MAG_OFF))
+        self.send_raw.emit(
+            build_electromagnet(COMM.MAG_ON if checked else COMM.MAG_OFF)
+        )
 
     def _on_mag_sync(self) -> None:
         self.send_raw.emit(build_sync())
@@ -149,5 +157,3 @@ class SystemControlTab(QWidget):
     def _on_auto_sync_interval_changed(self, value: int) -> None:
         if self._sync_timer.isActive():
             self._sync_timer.start(value * 1000)
-
-

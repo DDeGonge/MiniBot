@@ -25,10 +25,10 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 from comms.protocol import parse_line, ParsedMessage
 from config import COMM
 
-
 # ---------------------------------------------------------------------------
 # Worker — lives on a background QThread
 # ---------------------------------------------------------------------------
+
 
 class _SerialWorker(QObject):
     """Reads lines from serial port and emits structured signals.
@@ -39,25 +39,27 @@ class _SerialWorker(QObject):
     """
 
     # Outgoing: parsed responses
-    position_received  = pyqtSignal(int, float, float, float, float)  # id, x, y, theta_deg, battery_v
-    ack_received       = pyqtSignal(int)                        # id
-    error_received     = pyqtSignal(int, str)                   # id, reason
+    position_received = pyqtSignal(
+        int, float, float, float, float
+    )  # id, x, y, theta_deg, battery_v
+    ack_received = pyqtSignal(int)  # id
+    error_received = pyqtSignal(int, str)  # id, reason
     mag_field_received = pyqtSignal(int, float, float, float)  # id, bx, by, bz
-    pong_received      = pyqtSignal()
-    raw_line_received  = pyqtSignal(str)                        # raw text for debug log
-    connection_changed = pyqtSignal(bool)                       # True=connected
-    worker_error       = pyqtSignal(str)                        # unrecoverable error msg
+    pong_received = pyqtSignal()
+    raw_line_received = pyqtSignal(str)  # raw text for debug log
+    connection_changed = pyqtSignal(bool)  # True=connected
+    worker_error = pyqtSignal(str)  # unrecoverable error msg
 
-    finished           = pyqtSignal()
+    finished = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
-        self._port_name:  Optional[str] = None
-        self._baud_rate:  int           = COMM.DEFAULT_BAUD_RATE
-        self._running:    bool          = False
+        self._port_name: Optional[str] = None
+        self._baud_rate: int = COMM.DEFAULT_BAUD_RATE
+        self._running: bool = False
         self._send_queue: queue.Queue[bytes] = queue.Queue()
-        self._serial:     Optional[serial.Serial] = None
-        self._rx_buf:     bytes         = b''  # incomplete-line carry buffer
+        self._serial: Optional[serial.Serial] = None
+        self._rx_buf: bytes = b""  # incomplete-line carry buffer
 
     # ------------------------------------------------------------------
     # Public API (called from GUI thread — thread-safe via queue / flags)
@@ -140,8 +142,8 @@ class _SerialWorker(QObject):
                             self._rx_buf += byte
 
                     # Process every complete newline-terminated line.
-                    while b'\n' in self._rx_buf:
-                        line, self._rx_buf = self._rx_buf.split(b'\n', 1)
+                    while b"\n" in self._rx_buf:
+                        line, self._rx_buf = self._rx_buf.split(b"\n", 1)
                         if line:
                             self._dispatch(line)
 
@@ -165,7 +167,7 @@ class _SerialWorker(QObject):
     # ------------------------------------------------------------------
 
     # ACK prefix bytes for fast-path detection: b'>3,'
-    _ACK_PREFIX = f'{COMM.MSG_PREFIX}{COMM.RESP_ACK}{COMM.DELIMITER}'.encode('ascii')
+    _ACK_PREFIX = f"{COMM.MSG_PREFIX}{COMM.RESP_ACK}{COMM.DELIMITER}".encode("ascii")
 
     def _dispatch(self, raw: bytes) -> None:
         """Parse a raw line and emit the appropriate signal.
@@ -178,15 +180,17 @@ class _SerialWorker(QObject):
         # ---- fast path: position ACK ----
         if raw.startswith(self._ACK_PREFIX):
             try:
-                parts = raw.split(b',')
+                parts = raw.split(b",")
                 if len(parts) == 7:
-                    piece_id  = int(parts[1], 16)
-                    x_mm      = float(parts[2])
-                    y_mm      = float(parts[3])
+                    piece_id = int(parts[1], 16)
+                    x_mm = float(parts[2])
+                    y_mm = float(parts[3])
                     theta_deg = math.degrees(float(parts[4]))
                     battery_v = float(parts[6].strip())
                     if battery_v >= 0:
-                        self.position_received.emit(piece_id, x_mm, y_mm, theta_deg, battery_v)
+                        self.position_received.emit(
+                            piece_id, x_mm, y_mm, theta_deg, battery_v
+                        )
                     self.ack_received.emit(piece_id)
                     return
             except (ValueError, IndexError):
@@ -197,7 +201,7 @@ class _SerialWorker(QObject):
         self.raw_line_received.emit(msg.raw)
 
         if msg.msg_type == COMM.RESP_NACK and msg.piece_id is not None:
-            self.error_received.emit(msg.piece_id, msg.reason or '')
+            self.error_received.emit(msg.piece_id, msg.reason or "")
         elif msg.msg_type == COMM.RESP_MAG_FIELD and msg.piece_id is not None:
             self.mag_field_received.emit(
                 msg.piece_id,
@@ -214,6 +218,7 @@ class _SerialWorker(QObject):
 # SerialHandler — public facade (lives on GUI thread)
 # ---------------------------------------------------------------------------
 
+
 class SerialHandler(QObject):
     """Manages the serial worker thread.
 
@@ -222,14 +227,14 @@ class SerialHandler(QObject):
     """
 
     # Mirror worker signals (re-emitted so callers connect here, not to worker)
-    position_received  = pyqtSignal(int, float, float, float, float)
-    ack_received       = pyqtSignal(int)
-    error_received     = pyqtSignal(int, str)
+    position_received = pyqtSignal(int, float, float, float, float)
+    ack_received = pyqtSignal(int)
+    error_received = pyqtSignal(int, str)
     mag_field_received = pyqtSignal(int, float, float, float)
-    pong_received      = pyqtSignal()
-    raw_line_received  = pyqtSignal(str)
-    connection_changed = pyqtSignal(bool)          # True=connected
-    serial_error       = pyqtSignal(str)
+    pong_received = pyqtSignal()
+    raw_line_received = pyqtSignal(str)
+    connection_changed = pyqtSignal(bool)  # True=connected
+    serial_error = pyqtSignal(str)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -245,7 +250,9 @@ class SerialHandler(QObject):
     # Connection management
     # ------------------------------------------------------------------
 
-    def connect_port(self, port_name: str, baud_rate: int = COMM.DEFAULT_BAUD_RATE) -> None:
+    def connect_port(
+        self, port_name: str, baud_rate: int = COMM.DEFAULT_BAUD_RATE
+    ) -> None:
         """Open a serial connection on a background thread."""
         if self._thread and self._thread.isRunning():
             return  # already running; caller should disconnect first

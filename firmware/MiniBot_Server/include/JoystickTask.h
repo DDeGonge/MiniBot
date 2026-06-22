@@ -1,11 +1,11 @@
 #ifndef JOYSTICK_TASK_H
 #define JOYSTICK_TASK_H
 
+#include "ESPNowMessages.h"
+#include "config.h"
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "config.h"
-#include "ESPNowMessages.h"
 
 #if ENABLE_JOYSTICK_MODE
 

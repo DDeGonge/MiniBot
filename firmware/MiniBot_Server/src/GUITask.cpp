@@ -1,6 +1,6 @@
 #include "GUITask.h"
-#include "QueueStructs.h"
 #include "ElectromagnetTask.h"
+#include "QueueStructs.h"
 
 // Web Server
 AsyncWebServer server(80);
@@ -237,35 +237,34 @@ const char index_html[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // WebSocket event handler
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
                AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_CONNECT) {
     DEBUG_PRINTF("WebSocket client #%u connected\n", client->id());
     // Don't send initial status - client will get updates as they occur
     // This prevents overwhelming the WebSocket queue
-  } 
-  else if (type == WS_EVT_DISCONNECT) {
+  } else if (type == WS_EVT_DISCONNECT) {
     DEBUG_PRINTF("WebSocket client #%u disconnected\n", client->id());
-  }
-  else if (type == WS_EVT_DATA) {
-    AwsFrameInfo *info = (AwsFrameInfo*)arg;
-    if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+  } else if (type == WS_EVT_DATA) {
+    AwsFrameInfo *info = (AwsFrameInfo *)arg;
+    if (info->final && info->index == 0 && info->len == len &&
+        info->opcode == WS_TEXT) {
       data[len] = 0;
-      String message = (char*)data;
-      
+      String message = (char *)data;
+
       // Check message type: "cmd,..." or "req,..."
       if (message.startsWith("cmd,")) {
         // Parse command: format "cmd,id,x,y,angle,duration"
         CommandMessage msg = {};
         msg.commandType = CMD_TYPE_GUI;
         GUICommand &cmd = msg.data.guiCmd;
-        cmd.requestType = 0;  // Position command
-        
-        int idx1 = message.indexOf(',', 4);  // After "cmd,"
+        cmd.requestType = 0; // Position command
+
+        int idx1 = message.indexOf(',', 4); // After "cmd,"
         int idx2 = message.indexOf(',', idx1 + 1);
         int idx3 = message.indexOf(',', idx2 + 1);
         int idx4 = message.indexOf(',', idx3 + 1);
-        
+
         if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
           String targetIdStr = message.substring(4, idx1);
           // Parse hex string (e.g., "0x05" or "5")
@@ -274,15 +273,16 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
           } else {
             cmd.targetID = targetIdStr.toInt();
           }
-          
+
           cmd.x = message.substring(idx1 + 1, idx2).toFloat();
           cmd.y = message.substring(idx2 + 1, idx3).toFloat();
           cmd.angle = message.substring(idx3 + 1, idx4).toFloat();
           cmd.duration = message.substring(idx4 + 1).toFloat();
-          
+
           // Send to command queue
           if (xQueueSend(commandQueue, &msg, 0) == pdPASS) {
-            DEBUG_PRINTF("Command queued for robot 0x%02X: x=%.2f y=%.2f a=%.2f d=%.2f\n", 
+            DEBUG_PRINTF("Command queued for robot 0x%02X: x=%.2f y=%.2f "
+                         "a=%.2f d=%.2f\n",
                          cmd.targetID, cmd.x, cmd.y, cmd.angle, cmd.duration);
           } else {
             DEBUG_PRINTLN("Command queue full!");
@@ -295,8 +295,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         CommandMessage msg = {};
         msg.commandType = CMD_TYPE_GUI;
         GUICommand &cmd = msg.data.guiCmd;
-        cmd.requestType = 1;  // Position request
-        
+        cmd.requestType = 1; // Position request
+
         String targetIdStr = message.substring(4);
         // Parse hex string (e.g., "0x05" or "5")
         if (targetIdStr.startsWith("0x") || targetIdStr.startsWith("0X")) {
@@ -304,15 +304,16 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         } else {
           cmd.targetID = targetIdStr.toInt();
         }
-        
+
         cmd.x = 0;
         cmd.y = 0;
         cmd.angle = 0;
         cmd.duration = 0;
-        
+
         // Send to command queue
         if (xQueueSend(commandQueue, &msg, 0) == pdPASS) {
-          DEBUG_PRINTF("Position request queued for robot 0x%02X\n", cmd.targetID);
+          DEBUG_PRINTF("Position request queued for robot 0x%02X\n",
+                       cmd.targetID);
         } else {
           DEBUG_PRINTLN("Command queue full!");
         }
@@ -321,8 +322,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         CommandMessage msg = {};
         msg.commandType = CMD_TYPE_GUI;
         GUICommand &cmd = msg.data.guiCmd;
-        cmd.requestType = 2;  // Magnet field request
-        
+        cmd.requestType = 2; // Magnet field request
+
         String targetIdStr = message.substring(4);
         // Parse hex string (e.g., "0x05" or "5")
         if (targetIdStr.startsWith("0x") || targetIdStr.startsWith("0X")) {
@@ -330,15 +331,16 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         } else {
           cmd.targetID = targetIdStr.toInt();
         }
-        
+
         cmd.x = 0;
         cmd.y = 0;
         cmd.angle = 0;
         cmd.duration = 0;
-        
+
         // Send to command queue
         if (xQueueSend(commandQueue, &msg, 0) == pdPASS) {
-          DEBUG_PRINTF("Magnet field request queued for robot 0x%02X\n", cmd.targetID);
+          DEBUG_PRINTF("Magnet field request queued for robot 0x%02X\n",
+                       cmd.targetID);
         } else {
           DEBUG_PRINTLN("Command queue full!");
         }
@@ -346,7 +348,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         // Parse electromagnet control: format "emag,0" or "emag,1"
         int enabled = message.substring(5).toInt();
         setElectromagnetEnabled(enabled == 1);
-        DEBUG_PRINTF("Electromagnet control set to: %s\n", enabled ? "ENABLED" : "DISABLED");
+        DEBUG_PRINTF("Electromagnet control set to: %s\n",
+                     enabled ? "ENABLED" : "DISABLED");
       } else if (message == "sync") {
         // Position sync: broadcast PosSyncCommand to all units
         CommandMessage syncMsg = {};
@@ -377,16 +380,16 @@ void initGUI() {
     robotStatus[i].magnetZ_gauss = 0.0;
     robotStatus[i].magnetFieldValid = false;
   }
-  
+
   // Setup WebSocket
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
-  
+
   // Setup web server routes
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html);
   });
-  
+
   server.begin();
   DEBUG_PRINTLN("Web server started");
 }
@@ -394,9 +397,9 @@ void initGUI() {
 // FreeRTOS GUI Task
 void guiTask(void *parameter) {
   DEBUG_PRINTLN("GUI Task started");
-  
+
   GUIStatus status;
-  
+
   while (1) {
     // Check for status updates from communicator
     if (xQueueReceive(guiStatusQueue, &status, pdMS_TO_TICKS(10)) == pdPASS) {
@@ -420,46 +423,60 @@ void guiTask(void *parameter) {
         if (status.syncStatus != 0) {
           robotStatus[status.targetID].syncStatus = status.syncStatus;
         }
-        
+
         // Only send if we have connected clients and queue isn't full
         if (ws.count() > 0) {
           // Broadcast to all WebSocket clients
-          String json = "{\"id\":" + String(status.targetID) + 
-                       ",\"x\":" + String(robotStatus[status.targetID].currentX, 2) +
-                       ",\"y\":" + String(robotStatus[status.targetID].currentY, 2) +
-                       ",\"angle\":" + String(robotStatus[status.targetID].currentAngle, 3) +
-                       ",\"ts\":" + String(robotStatus[status.targetID].timestamp) +
-                       ",\"batt\":" + String(robotStatus[status.targetID].batteryVoltage, 2) +
-                       ",\"ack\":" + String(robotStatus[status.targetID].ackReceived ? "true" : "false") +
-                       ",\"magX\":" + String(robotStatus[status.targetID].magnetX_gauss, 2) +
-                       ",\"magY\":" + String(robotStatus[status.targetID].magnetY_gauss, 2) +
-                       ",\"magZ\":" + String(robotStatus[status.targetID].magnetZ_gauss, 2) +
-                       ",\"magValid\":" + String(robotStatus[status.targetID].magnetFieldValid ? "true" : "false") +
-                       ",\"syncStatus\":" + String(robotStatus[status.targetID].syncStatus) + "}";
-          
+          String json =
+              "{\"id\":" + String(status.targetID) +
+              ",\"x\":" + String(robotStatus[status.targetID].currentX, 2) +
+              ",\"y\":" + String(robotStatus[status.targetID].currentY, 2) +
+              ",\"angle\":" +
+              String(robotStatus[status.targetID].currentAngle, 3) +
+              ",\"ts\":" + String(robotStatus[status.targetID].timestamp) +
+              ",\"batt\":" +
+              String(robotStatus[status.targetID].batteryVoltage, 2) +
+              ",\"ack\":" +
+              String(robotStatus[status.targetID].ackReceived ? "true"
+                                                              : "false") +
+              ",\"magX\":" +
+              String(robotStatus[status.targetID].magnetX_gauss, 2) +
+              ",\"magY\":" +
+              String(robotStatus[status.targetID].magnetY_gauss, 2) +
+              ",\"magZ\":" +
+              String(robotStatus[status.targetID].magnetZ_gauss, 2) +
+              ",\"magValid\":" +
+              String(robotStatus[status.targetID].magnetFieldValid ? "true"
+                                                                   : "false") +
+              ",\"syncStatus\":" +
+              String(robotStatus[status.targetID].syncStatus) + "}";
+
           // Try to send, but don't block if queue is full
           ws.textAll(json);
-          
+
           // Small delay to prevent overwhelming the WebSocket
           vTaskDelay(pdMS_TO_TICKS(5));
         }
-        
+
         if (status.ackReceived) {
-          DEBUG_PRINTF("Status update for robot 0x%02X: (%.2f, %.2f) %.3frad %.2fV\n",
-                       status.targetID, status.currentX, status.currentY, 
-                       status.currentAngle, status.batteryVoltage);
+          DEBUG_PRINTF(
+              "Status update for robot 0x%02X: (%.2f, %.2f) %.3frad %.2fV\n",
+              status.targetID, status.currentX, status.currentY,
+              status.currentAngle, status.batteryVoltage);
         } else if (status.magnetFieldValid) {
-          DEBUG_PRINTF("Status update for robot 0x%02X: Magnet [%.2f, %.2f, %.2f] gauss\n",
-                       status.targetID, status.magnetX_gauss, status.magnetY_gauss, status.magnetZ_gauss);
+          DEBUG_PRINTF("Status update for robot 0x%02X: Magnet [%.2f, %.2f, "
+                       "%.2f] gauss\n",
+                       status.targetID, status.magnetX_gauss,
+                       status.magnetY_gauss, status.magnetZ_gauss);
         } else {
           DEBUG_PRINTF("ACK timeout for robot 0x%02X\n", status.targetID);
         }
       }
     }
-    
+
     // Clean up WebSocket clients
     ws.cleanupClients();
-    
+
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

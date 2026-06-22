@@ -13,17 +13,18 @@ struct JoystickState {
   uint32_t lastSendTime;
   uint32_t lastChangeTime;
 };
- 
+
 void initJoystick() {
   pinMode(JOYSTICK_THROTTLE_PIN, INPUT);
   pinMode(JOYSTICK_STEERING_PIN, INPUT);
-  DEBUG_PRINTLN("Joystick initialized on pins: T=" + String(JOYSTICK_THROTTLE_PIN) + 
-                 ", S=" + String(JOYSTICK_STEERING_PIN));
+  DEBUG_PRINTLN(
+      "Joystick initialized on pins: T=" + String(JOYSTICK_THROTTLE_PIN) +
+      ", S=" + String(JOYSTICK_STEERING_PIN));
 }
 
-float normalizeInput(uint16_t rawValue, uint16_t center, uint16_t deadzone, int8_t invert) {
+float normalizeInput(uint16_t rawValue, uint16_t center, uint16_t deadzone,
+                     int8_t invert) {
   int16_t offset = (int16_t)rawValue - (int16_t)center;
-
 
   // If within deadzone, return 0
   if (abs(offset) <= deadzone) {
@@ -33,31 +34,36 @@ float normalizeInput(uint16_t rawValue, uint16_t center, uint16_t deadzone, int8
   float norm = 0.0f;
   if (offset > 0) {
     int16_t maxOffset = (int16_t)JOYSTICK_MAX_TICK - (int16_t)center - deadzone;
-    if (maxOffset <= 0) return 1.0f * invert;
+    if (maxOffset <= 0)
+      return 1.0f * invert;
     norm = (float)(offset - deadzone) / (float)maxOffset;
-    if (norm > 1.0f) norm = 1.0f;
+    if (norm > 1.0f)
+      norm = 1.0f;
   } else {
     int16_t minOffset = (int16_t)center - (int16_t)JOYSTICK_MIN_TICK - deadzone;
-    if (minOffset <= 0) return -1.0f * invert;
+    if (minOffset <= 0)
+      return -1.0f * invert;
     norm = (float)(offset + deadzone) / (float)minOffset;
-    if (norm < -1.0f) norm = -1.0f;
+    if (norm < -1.0f)
+      norm = -1.0f;
   }
   return norm * invert;
 }
 
 // Calculate motor velocities for differential drive
-void calculateMotorVelocities(float throttleInput, float steeringInput, 
+void calculateMotorVelocities(float throttleInput, float steeringInput,
                               int8_t &m0_vel, int8_t &m1_vel) {
-  
+
   // Reduce steering influence as throttle increases
-  float steeringInfluence = 1.0f - (abs(throttleInput) * JOYSTICK_STEERING_INFLUENCE_FACTOR);
+  float steeringInfluence =
+      1.0f - (abs(throttleInput) * JOYSTICK_STEERING_INFLUENCE_FACTOR);
   steeringInput *= steeringInfluence;
   steeringInput *= JOYSTICK_STEERING_SCALE;
-  
+
   // Differential drive motor control
   float m0_float = throttleInput + steeringInput;
   float m1_float = throttleInput - steeringInput;
-  
+
   // Normalize if either exceeds max
   float maxVal = max(abs(m0_float), abs(m1_float));
   if (maxVal > 1.0f) {
@@ -65,24 +71,27 @@ void calculateMotorVelocities(float throttleInput, float steeringInput,
     m1_float /= maxVal;
   }
 
-  DEBUG_PRINTF("Normalized Inputs -> Throttle: %.2f, Steering: %.2f, Influence: %.2f, M0: %.2f, M1: %.2f\n", 
-                throttleInput, steeringInput, steeringInfluence, m0_float, m1_float);
-  
+  DEBUG_PRINTF("Normalized Inputs -> Throttle: %.2f, Steering: %.2f, "
+               "Influence: %.2f, M0: %.2f, M1: %.2f\n",
+               throttleInput, steeringInput, steeringInfluence, m0_float,
+               m1_float);
+
   // Scale to motor velocity range
   m0_vel = (int8_t)(m0_float * JOYSTICK_MAX_MOTOR_VELOCITY);
   m1_vel = (int8_t)(m1_float * JOYSTICK_MAX_MOTOR_VELOCITY);
 }
 
-bool hasSignalChanged(float throttleNow, float steeringNow, 
-                      float lastThrottle, float lastSteering) {
+bool hasSignalChanged(float throttleNow, float steeringNow, float lastThrottle,
+                      float lastSteering) {
   float changeThreshold = 0.05f; // 5% change threshold
 
-  bool thresholdExceeded = (abs(throttleNow - lastThrottle) > changeThreshold) ||
-                           (abs(steeringNow - lastSteering) > changeThreshold);
+  bool thresholdExceeded =
+      (abs(throttleNow - lastThrottle) > changeThreshold) ||
+      (abs(steeringNow - lastSteering) > changeThreshold);
 
   bool throttleCrossedZero = (lastThrottle != 0.0f && throttleNow == 0.0f);
   bool steeringCrossedZero = (lastSteering != 0.0f && steeringNow == 0.0f);
-  
+
   return thresholdExceeded || throttleCrossedZero || steeringCrossedZero;
 }
 
@@ -93,24 +102,27 @@ void joystickTask(void *parameter) {
   state.lastSteering = 0;
   state.lastSendTime = millis();
   state.lastChangeTime = millis();
-  
+
   DEBUG_PRINTLN("Joystick Task started");
-  
+
   while (true) {
     uint32_t currentTime = millis();
     uint16_t throttleRaw = analogRead(JOYSTICK_THROTTLE_PIN);
     uint16_t steeringRaw = analogRead(JOYSTICK_STEERING_PIN);
-    
-    float throttleInput = normalizeInput(throttleRaw, JOYSTICK_THROTTLE_CENTER, 
-                                          JOYSTICK_DEADZONE, JOYSTICK_THROTTLE_INVERT);
-    float steeringInput = normalizeInput(steeringRaw, JOYSTICK_STEERING_CENTER, 
-                                          JOYSTICK_DEADZONE, JOYSTICK_STEERING_INVERT);
+
+    float throttleInput =
+        normalizeInput(throttleRaw, JOYSTICK_THROTTLE_CENTER, JOYSTICK_DEADZONE,
+                       JOYSTICK_THROTTLE_INVERT);
+    float steeringInput =
+        normalizeInput(steeringRaw, JOYSTICK_STEERING_CENTER, JOYSTICK_DEADZONE,
+                       JOYSTICK_STEERING_INVERT);
 
     // Determine if we should send a command
     bool shouldSend = false;
     uint32_t timeSinceSend = currentTime - state.lastSendTime;
-    
-    if (hasSignalChanged(throttleInput, steeringInput, state.lastThrottle, state.lastSteering)) {
+
+    if (hasSignalChanged(throttleInput, steeringInput, state.lastThrottle,
+                         state.lastSteering)) {
       if (timeSinceSend >= JOYSTICK_UPDATE_INTERVAL_MS) {
         shouldSend = true;
         state.lastChangeTime = currentTime;
@@ -120,9 +132,10 @@ void joystickTask(void *parameter) {
     } else if (timeSinceSend >= JOYSTICK_WATCHDOG_INTERVAL_MS) {
       shouldSend = true;
     }
-    
+
     if (shouldSend) {
-      DEBUG_PRINTF("Joystick Raw[T:%d, S:%d]  ", (int)throttleRaw, (int)steeringRaw);
+      DEBUG_PRINTF("Joystick Raw[T:%d, S:%d]  ", (int)throttleRaw,
+                   (int)steeringRaw);
       if (throttleInput == 0 && steeringInput == 0) {
         // If joystick is centered, send a stop command
         CommandMessage msg;
@@ -132,9 +145,10 @@ void joystickTask(void *parameter) {
         msg.data.motCmd.enabled = 0;
         msg.data.motCmd.m0_vel = 0;
         msg.data.motCmd.m1_vel = 0;
-        
+
         if (xQueueSend(commandQueue, &msg, pdMS_TO_TICKS(10)) != pdPASS) {
-          DEBUG_PRINTLN("Warning: Command queue full, dropping joystick stop command");
+          DEBUG_PRINTLN(
+              "Warning: Command queue full, dropping joystick stop command");
         }
       } else {
         int8_t m0_vel, m1_vel;
@@ -150,15 +164,17 @@ void joystickTask(void *parameter) {
 
         // Debug output
         if (shouldSend) {
-          DEBUG_PRINTF("Processed[T:%d, S:%d] -> Motors[M0:%d, M1:%d]\n", 
-                (int)throttleInput, (int)steeringInput, (int)m0_vel, (int)m1_vel);
+          DEBUG_PRINTF("Processed[T:%d, S:%d] -> Motors[M0:%d, M1:%d]\n",
+                       (int)throttleInput, (int)steeringInput, (int)m0_vel,
+                       (int)m1_vel);
         }
-        
+
         if (xQueueSend(commandQueue, &msg, pdMS_TO_TICKS(10)) != pdPASS) {
-          DEBUG_PRINTLN("Warning: Command queue full, dropping joystick command");
+          DEBUG_PRINTLN(
+              "Warning: Command queue full, dropping joystick command");
         }
       }
-      
+
       state.lastSendTime = currentTime;
     }
 

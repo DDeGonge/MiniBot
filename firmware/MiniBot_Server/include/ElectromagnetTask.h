@@ -1,10 +1,10 @@
 #ifndef ELECTROMAGNET_TASK_H
 #define ELECTROMAGNET_TASK_H
 
+#include "config.h"
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "config.h"
 
 // Task handle
 extern TaskHandle_t emagTaskHandle;

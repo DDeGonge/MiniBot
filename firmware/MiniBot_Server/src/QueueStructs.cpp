@@ -13,8 +13,8 @@ void initQueues() {
   guiStatusQueue = xQueueCreate(20, sizeof(GUIStatus));
   pythonStatusQueue = xQueueCreate(20, sizeof(GUIStatus));
   i2cStatusQueue = xQueueCreate(20, sizeof(GUIStatus));
-  
-  if (commandQueue == NULL || guiStatusQueue == NULL || 
+
+  if (commandQueue == NULL || guiStatusQueue == NULL ||
       pythonStatusQueue == NULL || i2cStatusQueue == NULL) {
     DEBUG_PRINTLN("Failed to create queues!");
   } else {
@@ -23,7 +23,7 @@ void initQueues() {
 }
 
 // Broadcast status to all communication tasks
-void broadcastStatus(const GUIStatus& status) {
+void broadcastStatus(const GUIStatus &status) {
   xQueueSend(guiStatusQueue, &status, 0);
   xQueueSend(pythonStatusQueue, &status, 0);
   xQueueSend(i2cStatusQueue, &status, 0);

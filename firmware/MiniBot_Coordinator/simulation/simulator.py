@@ -45,9 +45,11 @@ class MotionSimulator(QObject):
         All calls to queue_moves() must also be on the GUI thread.
     """
 
-    position_updated = pyqtSignal(int, float, float, float, float)  # id, x, y, theta, battery_v(0)
-    move_complete    = pyqtSignal(int)                        # id
-    log_message      = pyqtSignal(str)
+    position_updated = pyqtSignal(
+        int, float, float, float, float
+    )  # id, x, y, theta, battery_v(0)
+    move_complete = pyqtSignal(int)  # id
+    log_message = pyqtSignal(str)
 
     def __init__(
         self,
@@ -56,12 +58,12 @@ class MotionSimulator(QObject):
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
-        self._board  = board_state
-        self._speed  = speed_mm_s
+        self._board = board_state
+        self._speed = speed_mm_s
         self._active: Dict[int, MoveCommand] = {}  # piece_id → command
         # Two-phase motion: 'rotate' then 'translate'
-        self._phase: Dict[int, str] = {}        # piece_id → 'rotate' | 'translate'
-        self._rotate_to: Dict[int, float] = {} # piece_id → chosen heading (deg)
+        self._phase: Dict[int, str] = {}  # piece_id → 'rotate' | 'translate'
+        self._rotate_to: Dict[int, float] = {}  # piece_id → chosen heading (deg)
 
         self._collision_enabled: bool = True
 
@@ -98,7 +100,7 @@ class MotionSimulator(QObject):
         """
         for cmd in commands:
             self._active[cmd.piece_id] = cmd
-            self._phase[cmd.piece_id] = 'rotate'
+            self._phase[cmd.piece_id] = "rotate"
             self._rotate_to.pop(cmd.piece_id, None)  # recompute on first tick
         if self._active and not self._timer.isActive():
             self._timer.start()
@@ -128,8 +130,8 @@ class MotionSimulator(QObject):
 
     @pyqtSlot()
     def _tick(self) -> None:
-        dt       = SIMULATOR.UPDATE_INTERVAL_MS / 1000.0
-        step     = self._speed * dt
+        dt = SIMULATOR.UPDATE_INTERVAL_MS / 1000.0
+        step = self._speed * dt
         rot_step = SIMULATOR.ROTATION_SPEED_DEG_S * dt
 
         # Snapshot of all NON-moving piece positions for collision checks.
@@ -147,44 +149,51 @@ class MotionSimulator(QObject):
                 continue
 
             cur_x, cur_y = piece.x_mm, piece.y_mm
-            dx           = cmd.target_x_mm - cur_x
-            dy           = cmd.target_y_mm - cur_y
-            dist         = math.hypot(dx, dy)
+            dx = cmd.target_x_mm - cur_x
+            dy = cmd.target_y_mm - cur_y
+            dist = math.hypot(dx, dy)
 
             # Default: hold position and orientation
             new_x, new_y = cur_x, cur_y
-            new_theta    = piece.orientation_deg
+            new_theta = piece.orientation_deg
 
-            phase = self._phase.get(pid, 'rotate')
+            phase = self._phase.get(pid, "rotate")
 
             # ── Phase 1: Rotate to face target (forward or backward) ─────
-            if phase == 'rotate':
+            if phase == "rotate":
                 # Lazily compute the rotation target on the first tick.
                 if pid not in self._rotate_to:
                     if dist > 1.0:
                         fwd = math.degrees(math.atan2(dy, dx)) % 360.0
                         bwd = (fwd + 180.0) % 360.0
-                        diff_fwd = abs((fwd - piece.orientation_deg + 180.0) % 360.0 - 180.0)
-                        diff_bwd = abs((bwd - piece.orientation_deg + 180.0) % 360.0 - 180.0)
+                        diff_fwd = abs(
+                            (fwd - piece.orientation_deg + 180.0) % 360.0 - 180.0
+                        )
+                        diff_bwd = abs(
+                            (bwd - piece.orientation_deg + 180.0) % 360.0 - 180.0
+                        )
                         self._rotate_to[pid] = fwd if diff_fwd <= diff_bwd else bwd
                     else:
                         # Already essentially at target; no rotation needed.
                         self._rotate_to[pid] = piece.orientation_deg
 
                 rotate_target = self._rotate_to[pid]
-                heading_diff  = (rotate_target - piece.orientation_deg + 180.0) % 360.0 - 180.0
+                heading_diff = (
+                    rotate_target - piece.orientation_deg + 180.0
+                ) % 360.0 - 180.0
 
                 if abs(heading_diff) <= rot_step:
                     # Snap to target heading and advance to translate phase.
                     new_theta = rotate_target
-                    self._phase[pid] = 'translate'
+                    self._phase[pid] = "translate"
                 else:
-                    new_theta = (piece.orientation_deg
-                                 + math.copysign(rot_step, heading_diff)) % 360.0
+                    new_theta = (
+                        piece.orientation_deg + math.copysign(rot_step, heading_diff)
+                    ) % 360.0
                 # Hold position while rotating.
 
             # ── Phase 2: Translate to target, preserving orientation ─────
-            elif phase == 'translate':
+            elif phase == "translate":
                 # Preserve the heading chosen during the rotate phase.
                 new_theta = self._rotate_to.get(pid, piece.orientation_deg)
 
@@ -199,8 +208,8 @@ class MotionSimulator(QObject):
             clamped_y = max(self._y_min, min(self._y_max, new_y))
             if (clamped_x, clamped_y) != (new_x, new_y):
                 self.log_message.emit(
-                    f'SIM: 0x{pid:02X} boundary clamped '
-                    f'({new_x:.1f},{new_y:.1f})→({clamped_x:.1f},{clamped_y:.1f})'
+                    f"SIM: 0x{pid:02X} boundary clamped "
+                    f"({new_x:.1f},{new_y:.1f})→({clamped_x:.1f},{clamped_y:.1f})"
                 )
                 new_x, new_y = clamped_x, clamped_y
 
@@ -210,7 +219,7 @@ class MotionSimulator(QObject):
                 for other_pid, (ox, oy) in snapshot.items():
                     if math.hypot(new_x - ox, new_y - oy) < self._collision_dist:
                         self.log_message.emit(
-                            f'SIM: 0x{pid:02X} blocked by 0x{other_pid:02X}'
+                            f"SIM: 0x{pid:02X} blocked by 0x{other_pid:02X}"
                         )
                         blocked = True
                         break
@@ -221,9 +230,10 @@ class MotionSimulator(QObject):
 
             # ── Arrival check ─────────────────────────────────────────────
             # Arrived when translate phase completes (position reached).
-            pos_done = (self._phase.get(pid) == 'translate'
-                        and math.hypot(new_x - cmd.target_x_mm,
-                                       new_y - cmd.target_y_mm) <= 0.5)
+            pos_done = (
+                self._phase.get(pid) == "translate"
+                and math.hypot(new_x - cmd.target_x_mm, new_y - cmd.target_y_mm) <= 0.5
+            )
             if pos_done:
                 arrived_ids.append(pid)
 
@@ -237,7 +247,7 @@ class MotionSimulator(QObject):
             self._phase.pop(pid, None)
             self._rotate_to.pop(pid, None)
             self.move_complete.emit(pid)
-            self.log_message.emit(f'SIM: 0x{pid:02X} arrived at target')
+            self.log_message.emit(f"SIM: 0x{pid:02X} arrived at target")
 
         if not self._active:
             self._timer.stop()
