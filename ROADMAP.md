@@ -49,7 +49,7 @@ get stuck sometimes, and the approach is far from optimal.
 - Identify stuck cases earlier and shift to an unstick method
 - Optimize path planning to run more moves in parallel if the pieces don't interact
 - Testing with real board would probably be smart.
-
+- Generalized graveyard positions, allow pieces to navigate to closest one that wont block other positions
 
 ## Implement Chess Engine
 
@@ -65,3 +65,11 @@ No plan for this yet, but will need to do something for games against AI and set
 be a locally run chess bot of user configurable ELO. Latter may need an API hookup or just a large library of stored puzzles.
 
 - Figure this part out
+
+## Power Optimizations
+
+Once all the functionality is in place (or sooner, idk), something needs to be done to improve battery life of the bots.
+
+- Allow auto light sleep by implementing windowed communication
+- Potential pcb changes to reduce stepper motor power draw
+- Intelligently adjust position estimation update rate when pieces are static
