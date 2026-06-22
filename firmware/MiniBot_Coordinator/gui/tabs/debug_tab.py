@@ -11,7 +11,7 @@ Debug Messaging tab:
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtWidgets import (
@@ -37,6 +37,7 @@ class DebugTab(QWidget):
     hide_stale_pieces_changed   = pyqtSignal(bool)   # True = hide pieces unseen >5s
     show_electromagnets_changed = pyqtSignal(bool)   # True = show electromagnet rings
     randomize_positions         = pyqtSignal()        # scatter all pieces randomly
+    set_fen_postions            = pyqtSignal(str)
     sim_collision_changed       = pyqtSignal(bool)   # True = collision detection on
     clear_pending_moves         = pyqtSignal()        # cancel all in-flight sim moves
 
@@ -141,6 +142,14 @@ class DebugTab(QWidget):
         self._btn_randomize.setEnabled(False)
         self._btn_randomize.clicked.connect(self.randomize_positions)
         sl.addWidget(self._btn_randomize)
+        
+        self._fen_input = QTextEdit('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+        self._fen_input.setFixedHeight(30)
+        sl.addWidget(self._fen_input)
+        
+        self._btn_fen_set = QPushButton('Set FEN to Board')
+        self._btn_fen_set.clicked.connect(self._on_fen_set)
+        sl.addWidget(self._btn_fen_set)
 
         self._collision_check = QCheckBox('Enable collision detection')
         self._collision_check.setChecked(True)
@@ -234,6 +243,14 @@ class DebugTab(QWidget):
         data = build_position_command(piece_id, x_mm, y_mm, theta_deg, duration_ms)
         self._log.append(f'→ {data.decode(COMM.ENCODING).strip()}')
         self.send_raw.emit(data)
+        
+    def _on_fen_set(self) -> None:
+        _fen_string = self._fen_input.toPlainText().strip()
+        valid_fen, error = self.validate_fen(_fen_string)
+        if valid_fen:
+            self.set_fen_postions.emit(_fen_string)
+        else:
+            self._log.append(error)
 
     def _on_sim_toggled(self, enabled: bool) -> None:
         mode_str = 'ON' if enabled else 'OFF'
@@ -263,3 +280,121 @@ class DebugTab(QWidget):
     @property
     def simulator_speed_mm_s(self) -> float:
         return self._sim_speed.value()
+
+
+    def validate_fen(self, fen: str) -> Tuple[bool, str]:
+        VALID_PIECES = set("prnbqkPRNBQK")
+        """
+        Validate the basic syntax of a complete FEN string.
+
+        Returns:
+            (True, "") when valid.
+            (False, "reason") when invalid.
+        """
+
+        fields = fen.strip().split()
+
+        if len(fields) != 6:
+            return False, "FEN must contain exactly 6 fields"
+
+        board, active_color, castling, en_passant, halfmove, fullmove = fields
+
+        # Validate board layout.
+        ranks = board.split("/")
+
+        if len(ranks) != 8:
+            return False, "Board section must contain exactly 8 ranks"
+
+        white_king_count = 0
+        black_king_count = 0
+
+        for rank_number, rank_data in zip(range(8, 0, -1), ranks):
+            square_count = 0
+
+            for character in rank_data:
+                if character.isdigit():
+                    empty_squares = int(character)
+
+                    if not 1 <= empty_squares <= 8:
+                        return (
+                            False,
+                            f"Invalid empty-square count on rank {rank_number}",
+                        )
+
+                    square_count += empty_squares
+
+                elif character in VALID_PIECES:
+                    square_count += 1
+
+                    if character == "K":
+                        white_king_count += 1
+                    elif character == "k":
+                        black_king_count += 1
+
+                else:
+                    return (
+                        False,
+                        f"Invalid character '{character}' on rank {rank_number}",
+                    )
+
+            if square_count != 8:
+                return (
+                    False,
+                    f"Rank {rank_number} contains {square_count} squares instead of 8",
+                )
+
+        if white_king_count != 1:
+            return False, "FEN must contain exactly one white king"
+
+        if black_king_count != 1:
+            return False, "FEN must contain exactly one black king"
+
+        # Validate active color.
+        if active_color not in ("w", "b"):
+            return False, "Active color must be 'w' or 'b'"
+
+        # Validate castling rights.
+        if castling != "-":
+            valid_castling = set("KQkq")
+
+            if any(character not in valid_castling for character in castling):
+                return False, "Invalid castling rights"
+
+            if len(set(castling)) != len(castling):
+                return False, "Castling rights cannot contain duplicates"
+
+        # Validate en passant square.
+        if en_passant != "-":
+            if len(en_passant) != 2:
+                return False, "Invalid en passant square"
+
+            file_character = en_passant[0]
+            rank_character = en_passant[1]
+
+            if file_character not in "abcdefgh":
+                return False, "Invalid en passant file"
+
+            if rank_character not in ("3", "6"):
+                return False, "En passant target must be on rank 3 or 6"
+
+        # Validate halfmove clock.
+        try:
+            halfmove_number = int(halfmove)
+
+            if halfmove_number < 0:
+                return False, "Halfmove clock cannot be negative"
+
+        except ValueError:
+            return False, "Halfmove clock must be an integer"
+
+        # Validate fullmove number.
+        try:
+            fullmove_number = int(fullmove)
+
+            if fullmove_number < 1:
+                return False, "Fullmove number must be at least 1"
+
+        except ValueError:
+            return False, "Fullmove number must be an integer"
+
+        return True, ""

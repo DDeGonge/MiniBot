@@ -444,6 +444,7 @@ class MainWindow(QMainWindow):
         self._debug_tab.hide_stale_pieces_changed.connect(self._on_hide_stale_changed)
         self._debug_tab.show_electromagnets_changed.connect(self._board_widget.set_show_electromagnets)
         self._debug_tab.randomize_positions.connect(self._on_randomize_positions)
+        self._debug_tab.set_fen_postions.connect(self._on_set_fen_positions)
         self._debug_tab.sim_collision_changed.connect(self._on_sim_collision_changed)
         self._debug_tab.clear_pending_moves.connect(self._simulator.stop_all)
 
@@ -596,6 +597,53 @@ class MainWindow(QMainWindow):
 
         self._board_widget.refresh()
         self._debug_tab.on_sim_log('SIM: positions randomized')
+        
+    @pyqtSlot(str)
+    def _on_set_fen_positions(self, fen: str) -> None:
+        fen_positions = fen.split(" ")[0]
+        fen_ranks = fen_positions.split("/")
+        
+        
+        piece_cords = []
+        
+        for index, rank_data in enumerate(fen_ranks):
+            rank_number = 8 - index
+            file_index = 0
+
+            for character in rank_data:
+                if character.isdigit():
+                    file_index += int(character)
+                    continue
+
+                file_letter = chr(ord("a") + file_index)
+                square = f"{file_letter}{rank_number}"
+
+                
+                piece_cords.append((character, rank_number, file_index))
+
+                file_index += 1
+                
+        def rankFileToMM(x):
+            return x*PIECES._S - PIECES._S//2
+                
+        for current_piece_index,  piece in enumerate(self._board.active_pieces()):
+            piece_found = False
+            for index, (char, rank, file) in enumerate(piece_cords):
+                color = "black" if char.islower() else "white"
+                piece_letter = piece.rank[0] if piece.rank != "knight" else "n"
+                if piece_letter == char.lower() and piece.color == color:
+                    print(rank, file)
+                    self._board.update_piece_position(piece.piece_id, rankFileToMM(file) + PIECES._S, rankFileToMM(rank), piece.orientation_deg, 0.0)
+                    piece_cords.pop(index)
+                    self._last_seen[piece.piece_id] = time.monotonic()
+                    piece_found = True
+                    break
+            if not piece_found:
+                self._board.update_piece_position(piece.piece_id, PIECES.GRAVEYARD_POSITIONS[piece.piece_id][0], PIECES.GRAVEYARD_POSITIONS[piece.piece_id][1], piece.orientation_deg, 0.0)
+                    
+               
+                    
+            
 
     @pyqtSlot(bool)
     def _on_connection_changed(self, connected: bool) -> None:

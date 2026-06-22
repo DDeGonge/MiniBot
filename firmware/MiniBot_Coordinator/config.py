@@ -86,7 +86,7 @@ class PIECES:
         0x0F: ( 7*_S - _S//2,  1*_S - _S//2,   90),  # Knight g1
         0x10: ( 8*_S - _S//2,  1*_S - _S//2,   90),  # Rook h1
         # White extra queen — staged in left border (off-board)
-        0x11: (-40,             1*_S - _S//2,   90),
+        0x11: (9*_S - _S//2,  1*_S - _S//2,   90),
 
         # Black pawns  (IDs 0x12–0x19, row 7)
         0x12: ( 1*_S - _S//2,  7*_S - _S//2, 270),
@@ -107,7 +107,51 @@ class PIECES:
         0x20: ( 7*_S - _S//2,  8*_S - _S//2, 270),  # Knight g8
         0x21: ( 8*_S - _S//2,  8*_S - _S//2, 270),  # Rook h8
         # Black extra queen — staged in left border (off-board)
-        0x22: (-40,             8*_S - _S//2, 270),
+        0x22: ( 0*_S - _S//2,  8*_S - _S//2, 270),
+    }
+
+    GRAVEYARD_POSITIONS = {
+        # White pawns  (IDs 0x01–0x08, row 2)
+        0x01: ( 10*_S - _S//2,  1*_S - _S//2,   90),
+        0x02: ( 9.5*_S - _S//2,  1.5*_S - _S//2,   90),
+        0x03: ( 10*_S - _S//2,  2*_S - _S//2,   90),
+        0x04: ( 9.5*_S - _S//2,  2.5*_S - _S//2,   90),
+        0x05: ( 10*_S - _S//2,  3*_S - _S//2,   90),
+        0x06: ( 9.5*_S - _S//2,  3.5*_S - _S//2,   90),
+        0x07: ( 10*_S - _S//2,  4*_S - _S//2,   90),
+        0x08: ( 9.5*_S - _S//2,  4.5*_S - _S//2,   90),
+        # White back rank  (IDs 0x09–0x10)
+        0x09: ( 10*_S - _S//2,  5*_S - _S//2,   90),  # Rook a1
+        0x0A: ( 9.5*_S - _S//2,  5.5*_S - _S//2,   90),  # Knight b1
+        0x0B: ( 10*_S - _S//2,  6*_S - _S//2,   90),  # Bishop c1
+        0x0C: ( 9.5*_S - _S//2,  6.5*_S - _S//2,   90),  # Queen d1
+        0x0D: ( 10*_S - _S//2,  7*_S - _S//2,   90),  # King e1
+        0x0E: ( 9.5*_S - _S//2,  7.5*_S - _S//2,   90),  # Bishop f1
+        0x0F: ( 10*_S - _S//2,  8*_S - _S//2,   90),  # Knight g1
+        0x10: ( 9*_S - _S//2,  8*_S - _S//2,   90),  # Rook h1
+        # White extra queen — staged in left border (off-board)
+        0x11: (9*_S - _S//2,  1*_S - _S//2,   90),
+
+        # Black pawns  (IDs 0x12–0x19, row 7)
+        0x12: ( -1*_S - _S//2,  1*_S - _S//2, 270),
+        0x13: ( -.5*_S - _S//2,  1.5*_S - _S//2, 270),
+        0x14: ( -1*_S - _S//2,  2*_S - _S//2, 270),
+        0x15: ( -.5*_S - _S//2,  2.5*_S - _S//2, 270),
+        0x16: ( -1*_S - _S//2,  3*_S - _S//2, 270),
+        0x17: ( -.5*_S - _S//2,  3.5*_S - _S//2, 270),
+        0x18: ( -1*_S - _S//2,  4*_S - _S//2, 270),
+        0x19: ( -.5*_S - _S//2,  4.5*_S - _S//2, 270),
+        # Black back rank  (IDs 0x1A–0x21)
+        0x1A: ( -1*_S - _S//2,  5*_S - _S//2, 270),  # Rook a8
+        0x1B: ( -.5*_S - _S//2,  5.5*_S - _S//2, 270),  # Knight b8
+        0x1C: ( -1*_S - _S//2,  6*_S - _S//2, 270),  # Bishop c8
+        0x1D: ( -.5*_S - _S//2,  6.5*_S - _S//2, 270),  # Queen d8
+        0x1E: ( -1*_S - _S//2,  7*_S - _S//2, 270),  # King e8
+        0x1F: ( -.5*_S - _S//2,  7.5*_S - _S//2, 270),  # Bishop f8
+        0x20: ( -1*_S - _S//2,  8*_S - _S//2, 270),  # Knight g8
+        0x21: ( 0*_S - _S//2,  1*_S - _S//2, 270),  # Rook h8
+        # Black extra queen — staged in left border (off-board)
+        0x22: ( 0*_S - _S//2,  8*_S - _S//2, 270),
     }
 
     # Rank assignments per piece ID
@@ -221,6 +265,7 @@ class PLANNING:
     PLANNERS = {
         'Enhanced Conflict':  ('planning.enhanced_conflict_planner', 'EnhancedConflictPlanner'),
         'Direct (debug only)':('planning.direct_planner',            'DirectPlanner'),
+        
     }
 
     DEFAULT_PLANNER        = 'Enhanced Conflict'

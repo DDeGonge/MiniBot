@@ -7,6 +7,8 @@ Path Planning tab:
   - Target X / Y inputs
   - "Plan Move" button  — runs the selected algorithm, populates move queue
   - "Return All Home"   — plans home moves for all pieces
+  - "Return All to Graveyard" — plans moves to graveyard for all pieces
+  - FEN input + "Set FEN to Board" button — set piece positions from FEN string
   - Move queue list
   - "Send Commands" button — dispatches queued moves to serial handler
 """
@@ -18,6 +20,7 @@ import logging
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import permutations, product
+from turtle import home
 from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
@@ -26,7 +29,7 @@ log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
-    QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget, QTextEdit
 )
 
 from config import PIECES, PLANNING
@@ -149,9 +152,15 @@ class PathPlanningTab(QWidget):
         self._target_y.setDecimals(1)
         self._target_y.setValue(0.0)
         xy_row.addWidget(self._target_y)
+        
+
+    
+        
+
         tl.addLayout(xy_row)
 
         btn_row = QHBoxLayout()
+
         self._btn_plan = QPushButton('Plan Move')
         self._btn_plan.clicked.connect(self._on_plan_move)
         btn_row.addWidget(self._btn_plan)
@@ -160,6 +169,19 @@ class PathPlanningTab(QWidget):
         self._btn_home.clicked.connect(self._on_return_home)
         btn_row.addWidget(self._btn_home)
         tl.addLayout(btn_row)
+
+        self._btn_graveyard = QPushButton('Return All to Graveyard')
+        self._btn_graveyard.clicked.connect(self._on_return_graveyard)
+        btn_row.addWidget(self._btn_graveyard)
+        tl.addLayout(btn_row)
+
+        self._fen_input = QTextEdit('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+        self._fen_input.setFixedHeight(30)
+        tl.addWidget(self._fen_input)
+        
+        self._btn_fen_set = QPushButton('Set FEN to Board')
+        self._btn_fen_set.clicked.connect(self._on_fen_positions)
+        tl.addWidget(self._btn_fen_set)
 
         root.addWidget(target_group)
 
@@ -302,6 +324,97 @@ class PathPlanningTab(QWidget):
             cmd.duration_ms = PL.HOME_MOVE_DURATION_MS
         self._viz_positions = {}  # fresh snapshot for new plan
         self._enqueue(commands, snap_positions=dict(positions))
+
+    def _on_return_graveyard(self) -> None:
+        from config import PIECES as P, PLANNING as PL
+        planner   = self._get_planner()
+        positions = {}
+        targets   = {}
+
+        for piece in self._board.active_pieces():
+            home = P.GRAVEYARD_POSITIONS.get(piece.piece_id)
+            if home:
+                positions[piece.piece_id] = (piece.x_mm, piece.y_mm)
+                targets[piece.piece_id]   = (float(home[0]), float(home[1]))
+
+        if self._chk_optimize_assignment.isChecked():
+            commands = self._exhaustive_assignment_plan(planner, positions, targets)
+        else:
+            commands = planner.plan_moves(positions, targets)
+
+        for cmd in commands:
+            cmd.duration_ms = PL.HOME_MOVE_DURATION_MS
+        self._viz_positions = {}  # fresh snapshot for new plan
+        self._enqueue(commands, snap_positions=dict(positions))
+
+    def _on_fen_positions(self) -> None:
+        from config import PIECES as P, PLANNING as PL
+        planner   = self._get_planner()
+        positions = {}
+        targets   = {}
+
+        
+        _fen_string = self._fen_input.toPlainText().strip()
+        valid_fen, error = self.validate_fen(_fen_string)
+        if not valid_fen:
+            self.planning_log.emit(error)
+            return
+        
+        fen_positions = _fen_string.split(" ")[0]
+        fen_ranks = fen_positions.split("/")
+        
+        
+        piece_cords = []
+        
+        for index, rank_data in enumerate(fen_ranks):
+            rank_number = 8 - index
+            file_index = 0
+
+            for character in rank_data:
+                if character.isdigit():
+                    file_index += int(character)
+                    continue
+
+                file_letter = chr(ord("a") + file_index)
+                square = f"{file_letter}{rank_number}"
+
+                
+                piece_cords.append((character, rank_number, file_index))
+
+                file_index += 1
+                
+        def rankFileToMM(x):
+            return x*PIECES._S - PIECES._S//2
+                
+        for   piece in (self._board.active_pieces()):
+            piece_found = False
+            for index, (char, rank, file) in enumerate(piece_cords):
+                color = "black" if char.islower() else "white"
+                piece_letter = piece.rank[0] if piece.rank != "knight" else "n"
+                if piece_letter == char.lower() and piece.color == color:
+                    
+                    positions[piece.piece_id] = (piece.x_mm, piece.y_mm)
+                    targets[piece.piece_id]   = (rankFileToMM(file) + PIECES._S, rankFileToMM(rank))
+                    piece_cords.pop(index)
+                    piece_found = True
+                    break
+            if not piece_found:
+                positions[piece.piece_id] = (piece.x_mm, piece.y_mm)
+                targets[piece.piece_id]   = (PIECES.GRAVEYARD_POSITIONS[piece.piece_id][0], PIECES.GRAVEYARD_POSITIONS[piece.piece_id][1])
+
+        if self._chk_optimize_assignment.isChecked():
+            commands = self._exhaustive_assignment_plan(planner, positions, targets)
+        else:
+            commands = planner.plan_moves(positions, targets)
+
+        for cmd in commands:
+            cmd.duration_ms = PL.HOME_MOVE_DURATION_MS
+        self._viz_positions = {}  # fresh snapshot for new plan
+        self._enqueue(commands, snap_positions=dict(positions))        
+
+                    
+               
+
 
     def _on_clear_queue(self) -> None:
         self._move_queue.clear()
@@ -504,3 +617,120 @@ class PathPlanningTab(QWidget):
         for piece in sorted(self._board.all_pieces(), key=lambda p: p.piece_id):
             label = f"0x{piece.piece_id:02X}  {piece.color[0].upper()}  {piece.rank_char}"
             self._piece_combo.addItem(label, userData=piece.piece_id)
+
+    def validate_fen(self, fen: str) -> Tuple[bool, str]:
+        VALID_PIECES = set("prnbqkPRNBQK")
+        """
+        Validate the basic syntax of a complete FEN string.
+
+        Returns:
+            (True, "") when valid.
+            (False, "reason") when invalid.
+        """
+
+        fields = fen.strip().split()
+
+        if len(fields) != 6:
+            return False, "FEN must contain exactly 6 fields"
+
+        board, active_color, castling, en_passant, halfmove, fullmove = fields
+
+        # Validate board layout.
+        ranks = board.split("/")
+
+        if len(ranks) != 8:
+            return False, "Board section must contain exactly 8 ranks"
+
+        white_king_count = 0
+        black_king_count = 0
+
+        for rank_number, rank_data in zip(range(8, 0, -1), ranks):
+            square_count = 0
+
+            for character in rank_data:
+                if character.isdigit():
+                    empty_squares = int(character)
+
+                    if not 1 <= empty_squares <= 8:
+                        return (
+                            False,
+                            f"Invalid empty-square count on rank {rank_number}",
+                        )
+
+                    square_count += empty_squares
+
+                elif character in VALID_PIECES:
+                    square_count += 1
+
+                    if character == "K":
+                        white_king_count += 1
+                    elif character == "k":
+                        black_king_count += 1
+
+                else:
+                    return (
+                        False,
+                        f"Invalid character '{character}' on rank {rank_number}",
+                    )
+
+            if square_count != 8:
+                return (
+                    False,
+                    f"Rank {rank_number} contains {square_count} squares instead of 8",
+                )
+
+        if white_king_count != 1:
+            return False, "FEN must contain exactly one white king"
+
+        if black_king_count != 1:
+            return False, "FEN must contain exactly one black king"
+
+        # Validate active color.
+        if active_color not in ("w", "b"):
+            return False, "Active color must be 'w' or 'b'"
+
+        # Validate castling rights.
+        if castling != "-":
+            valid_castling = set("KQkq")
+
+            if any(character not in valid_castling for character in castling):
+                return False, "Invalid castling rights"
+
+            if len(set(castling)) != len(castling):
+                return False, "Castling rights cannot contain duplicates"
+
+        # Validate en passant square.
+        if en_passant != "-":
+            if len(en_passant) != 2:
+                return False, "Invalid en passant square"
+
+            file_character = en_passant[0]
+            rank_character = en_passant[1]
+
+            if file_character not in "abcdefgh":
+                return False, "Invalid en passant file"
+
+            if rank_character not in ("3", "6"):
+                return False, "En passant target must be on rank 3 or 6"
+
+        # Validate halfmove clock.
+        try:
+            halfmove_number = int(halfmove)
+
+            if halfmove_number < 0:
+                return False, "Halfmove clock cannot be negative"
+
+        except ValueError:
+            return False, "Halfmove clock must be an integer"
+
+        # Validate fullmove number.
+        try:
+            fullmove_number = int(fullmove)
+
+            if fullmove_number < 1:
+                return False, "Fullmove number must be at least 1"
+
+        except ValueError:
+            return False, "Fullmove number must be an integer"
+
+        return True, ""
