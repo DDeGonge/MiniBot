@@ -16,9 +16,9 @@ from gui.main_window import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName('MiniBot Coordinator')
-    app.setOrganizationName('MiniBot')
-    app.setStyle(QStyleFactory.create('Fusion'))
+    app.setApplicationName("MiniBot Coordinator")
+    app.setOrganizationName("MiniBot")
+    app.setStyle(QStyleFactory.create("Fusion"))
 
     window = MainWindow()
     window.show()
@@ -26,5 +26,5 @@ def main() -> int:
     return app.exec()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

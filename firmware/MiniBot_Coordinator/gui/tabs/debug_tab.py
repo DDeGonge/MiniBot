@@ -15,8 +15,16 @@ from typing import Optional, Tuple
 
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QTextEdit, QVBoxLayout, QWidget,
+    QCheckBox,
+    QDoubleSpinBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from comms.protocol import build_position_command
@@ -32,14 +40,14 @@ class DebugTab(QWidget):
         hide_stale_pieces_changed(bool)  — True to hide pieces with no recent position
     """
 
-    send_raw                    = pyqtSignal(bytes)
-    simulator_mode_changed      = pyqtSignal(bool)   # True = simulator active
-    hide_stale_pieces_changed   = pyqtSignal(bool)   # True = hide pieces unseen >5s
-    show_electromagnets_changed = pyqtSignal(bool)   # True = show electromagnet rings
-    randomize_positions         = pyqtSignal()        # scatter all pieces randomly
-    set_fen_postions            = pyqtSignal(str)
-    sim_collision_changed       = pyqtSignal(bool)   # True = collision detection on
-    clear_pending_moves         = pyqtSignal()        # cancel all in-flight sim moves
+    send_raw = pyqtSignal(bytes)
+    simulator_mode_changed = pyqtSignal(bool)  # True = simulator active
+    hide_stale_pieces_changed = pyqtSignal(bool)  # True = hide pieces unseen >5s
+    show_electromagnets_changed = pyqtSignal(bool)  # True = show electromagnet rings
+    randomize_positions = pyqtSignal()  # scatter all pieces randomly
+    set_fen_postions = pyqtSignal(str)
+    sim_collision_changed = pyqtSignal(bool)  # True = collision detection on
+    clear_pending_moves = pyqtSignal()  # cancel all in-flight sim moves
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -54,29 +62,29 @@ class DebugTab(QWidget):
         root.setSpacing(8)
 
         # --- Command fields ---
-        cmd_group = QGroupBox('Send MOV Command')
+        cmd_group = QGroupBox("Send MOV Command")
         cl = QVBoxLayout(cmd_group)
 
         id_row = QHBoxLayout()
-        id_row.addWidget(QLabel('Target ID (hex):'))
+        id_row.addWidget(QLabel("Target ID (hex):"))
         self._id_spin = QSpinBox()
         self._id_spin.setRange(PIECES.WHITE_ID_START, PIECES.BLACK_ID_END)
         self._id_spin.setDisplayIntegerBase(16)
-        self._id_spin.setPrefix('0x')
+        self._id_spin.setPrefix("0x")
         self._id_spin.setValue(PIECES.WHITE_ID_START)
         id_row.addWidget(self._id_spin)
         id_row.addStretch()
         cl.addLayout(id_row)
 
         xy_row = QHBoxLayout()
-        xy_row.addWidget(QLabel('X (mm):'))
+        xy_row.addWidget(QLabel("X (mm):"))
         self._x_spin = QDoubleSpinBox()
         self._x_spin.setRange(-200.0, 600.0)
         self._x_spin.setDecimals(1)
         self._x_spin.setValue(0.0)
         xy_row.addWidget(self._x_spin)
 
-        xy_row.addWidget(QLabel('Y (mm):'))
+        xy_row.addWidget(QLabel("Y (mm):"))
         self._y_spin = QDoubleSpinBox()
         self._y_spin.setRange(-200.0, 600.0)
         self._y_spin.setDecimals(1)
@@ -85,7 +93,7 @@ class DebugTab(QWidget):
         cl.addLayout(xy_row)
 
         theta_dur_row = QHBoxLayout()
-        theta_dur_row.addWidget(QLabel('θ (°):'))
+        theta_dur_row.addWidget(QLabel("θ (°):"))
         self._theta_spin = QDoubleSpinBox()
         self._theta_spin.setRange(0.0, 359.9)
         self._theta_spin.setDecimals(1)
@@ -93,7 +101,7 @@ class DebugTab(QWidget):
         self._theta_spin.setWrapping(True)
         theta_dur_row.addWidget(self._theta_spin)
 
-        theta_dur_row.addWidget(QLabel('Duration (s):'))
+        theta_dur_row.addWidget(QLabel("Duration (s):"))
         self._dur_spin = QDoubleSpinBox()
         self._dur_spin.setRange(0.1, 60.0)
         self._dur_spin.setDecimals(2)
@@ -102,7 +110,7 @@ class DebugTab(QWidget):
         theta_dur_row.addWidget(self._dur_spin)
         cl.addLayout(theta_dur_row)
 
-        self._btn_send = QPushButton('Send MOV')
+        self._btn_send = QPushButton("Send MOV")
         self._btn_send.setMinimumHeight(36)
         self._btn_send.clicked.connect(self._on_send)
         cl.addWidget(self._btn_send)
@@ -110,61 +118,63 @@ class DebugTab(QWidget):
         root.addWidget(cmd_group)
 
         # --- Simulator ---
-        sim_group = QGroupBox('Simulator')
+        sim_group = QGroupBox("Simulator")
         sl = QVBoxLayout(sim_group)
 
-        self._sim_check = QCheckBox('Enable Simulator Mode')
+        self._sim_check = QCheckBox("Enable Simulator Mode")
         self._sim_check.setToolTip(
-            'When enabled, move commands are simulated locally instead of\n'
-            'being sent to the serial port.  Position is updated in real time\n'
-            'at the configured speed with boundary and collision enforcement.'
+            "When enabled, move commands are simulated locally instead of\n"
+            "being sent to the serial port.  Position is updated in real time\n"
+            "at the configured speed with boundary and collision enforcement."
         )
         self._sim_check.toggled.connect(self._on_sim_toggled)
         sl.addWidget(self._sim_check)
 
         speed_row = QHBoxLayout()
-        speed_row.addWidget(QLabel('Sim speed (mm/s):'))
+        speed_row.addWidget(QLabel("Sim speed (mm/s):"))
         self._sim_speed = QDoubleSpinBox()
         self._sim_speed.setRange(1.0, 500.0)
         self._sim_speed.setDecimals(1)
         self._sim_speed.setSingleStep(10.0)
         self._sim_speed.setValue(SIMULATOR.DEFAULT_SPEED_MM_S)
-        self._sim_speed.setToolTip('Nominal robot speed used by the simulator')
+        self._sim_speed.setToolTip("Nominal robot speed used by the simulator")
         speed_row.addWidget(self._sim_speed)
         speed_row.addStretch()
         sl.addLayout(speed_row)
 
-        self._btn_randomize = QPushButton('Randomize Positions')
+        self._btn_randomize = QPushButton("Randomize Positions")
         self._btn_randomize.setToolTip(
-            'Scatter all active pieces to random positions, ensuring at least\n'
-            '5 mm of spacing between any two pieces.'
+            "Scatter all active pieces to random positions, ensuring at least\n"
+            "5 mm of spacing between any two pieces."
         )
         self._btn_randomize.setEnabled(False)
         self._btn_randomize.clicked.connect(self.randomize_positions)
         sl.addWidget(self._btn_randomize)
-        
-        self._fen_input = QTextEdit('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+
+        self._fen_input = QTextEdit(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        )
         self._fen_input.setFixedHeight(30)
         sl.addWidget(self._fen_input)
-        
-        self._btn_fen_set = QPushButton('Set FEN to Board')
+
+        self._btn_fen_set = QPushButton("Set FEN to Board")
         self._btn_fen_set.clicked.connect(self._on_fen_set)
         sl.addWidget(self._btn_fen_set)
 
-        self._collision_check = QCheckBox('Enable collision detection')
+        self._collision_check = QCheckBox("Enable collision detection")
         self._collision_check.setChecked(True)
         self._collision_check.setEnabled(False)
         self._collision_check.setToolTip(
-            'When unchecked, pieces pass through each other in the simulator.\n'
-            'Useful for testing planners without false collision blocks.'
+            "When unchecked, pieces pass through each other in the simulator.\n"
+            "Useful for testing planners without false collision blocks."
         )
         self._collision_check.toggled.connect(self.sim_collision_changed)
         sl.addWidget(self._collision_check)
 
-        self._btn_clear_moves = QPushButton('Clear Pending Moves')
+        self._btn_clear_moves = QPushButton("Clear Pending Moves")
         self._btn_clear_moves.setToolTip(
-            'Cancel all in-flight simulator moves immediately.\n'
-            'Pieces stay at their current positions.'
+            "Cancel all in-flight simulator moves immediately.\n"
+            "Pieces stay at their current positions."
         )
         self._btn_clear_moves.setEnabled(False)
         self._btn_clear_moves.clicked.connect(self.clear_pending_moves)
@@ -173,15 +183,15 @@ class DebugTab(QWidget):
         root.addWidget(sim_group)
 
         # --- Display options ---
-        disp_group = QGroupBox('Display')
+        disp_group = QGroupBox("Display")
         dl = QVBoxLayout(disp_group)
-        self._hide_stale_check = QCheckBox('Hide pieces with no recent position (>5 s)')
+        self._hide_stale_check = QCheckBox("Hide pieces with no recent position (>5 s)")
         self._hide_stale_check.setChecked(False)
         self._hide_stale_check.toggled.connect(self.hide_stale_pieces_changed)
         dl.addWidget(self._hide_stale_check)
         self._show_em_check = QCheckBox(
-            f'Show electromagnet locations'
-            f'  (OD {ELECTROMAGNETS.OD_MM:.0f} mm / ID {ELECTROMAGNETS.ID_MM:.0f} mm,'
+            f"Show electromagnet locations"
+            f"  (OD {ELECTROMAGNETS.OD_MM:.0f} mm / ID {ELECTROMAGNETS.ID_MM:.0f} mm,"
             f'  {len(ELECTROMAGNETS.POSITIONS)} magnet{"s" if len(ELECTROMAGNETS.POSITIONS) != 1 else ""})'
         )
         self._show_em_check.setChecked(False)
@@ -190,16 +200,16 @@ class DebugTab(QWidget):
         root.addWidget(disp_group)
 
         # --- Response log ---
-        log_group = QGroupBox('Response Log')
+        log_group = QGroupBox("Response Log")
         ll = QVBoxLayout(log_group)
         self._log = QTextEdit()
         self._log.setReadOnly(True)
-        self._log.setPlaceholderText('Serial responses will appear here…')
+        self._log.setPlaceholderText("Serial responses will appear here…")
         self._log.setMinimumHeight(200)
         ll.addWidget(self._log)
 
         btn_row = QHBoxLayout()
-        self._btn_clear = QPushButton('Clear Log')
+        self._btn_clear = QPushButton("Clear Log")
         self._btn_clear.clicked.connect(self._log.clear)
         btn_row.addWidget(self._btn_clear)
         btn_row.addStretch()
@@ -215,7 +225,7 @@ class DebugTab(QWidget):
     @pyqtSlot(str)
     def on_raw_line_received(self, line: str) -> None:
         """Append a raw serial line to the response log."""
-        self._log.append(f'← {line}')
+        self._log.append(f"← {line}")
 
     @pyqtSlot(int, str)
     def on_error_received(self, piece_id: int, reason: str) -> None:
@@ -225,25 +235,23 @@ class DebugTab(QWidget):
 
     @pyqtSlot(int)
     def on_ack_received(self, piece_id: int) -> None:
-        self._log.append(
-            f'<span style="color:green">ACK 0x{piece_id:02X}</span>'
-        )
+        self._log.append(f'<span style="color:green">ACK 0x{piece_id:02X}</span>')
 
     # ------------------------------------------------------------------
     # Button handler
     # ------------------------------------------------------------------
 
     def _on_send(self) -> None:
-        piece_id    = self._id_spin.value()
-        x_mm        = self._x_spin.value()
-        y_mm        = self._y_spin.value()
-        theta_deg   = self._theta_spin.value()
+        piece_id = self._id_spin.value()
+        x_mm = self._x_spin.value()
+        y_mm = self._y_spin.value()
+        theta_deg = self._theta_spin.value()
         duration_ms = int(self._dur_spin.value() * 1000)
 
         data = build_position_command(piece_id, x_mm, y_mm, theta_deg, duration_ms)
-        self._log.append(f'→ {data.decode(COMM.ENCODING).strip()}')
+        self._log.append(f"→ {data.decode(COMM.ENCODING).strip()}")
         self.send_raw.emit(data)
-        
+
     def _on_fen_set(self) -> None:
         _fen_string = self._fen_input.toPlainText().strip()
         valid_fen, error = self.validate_fen(_fen_string)
@@ -253,8 +261,8 @@ class DebugTab(QWidget):
             self._log.append(error)
 
     def _on_sim_toggled(self, enabled: bool) -> None:
-        mode_str = 'ON' if enabled else 'OFF'
-        self._log.append(f'[SIM] Simulator mode {mode_str}')
+        mode_str = "ON" if enabled else "OFF"
+        self._log.append(f"[SIM] Simulator mode {mode_str}")
         self._btn_randomize.setEnabled(enabled)
         self._collision_check.setEnabled(enabled)
         self._btn_clear_moves.setEnabled(enabled)
@@ -280,7 +288,6 @@ class DebugTab(QWidget):
     @property
     def simulator_speed_mm_s(self) -> float:
         return self._sim_speed.value()
-
 
     def validate_fen(self, fen: str) -> Tuple[bool, str]:
         VALID_PIECES = set("prnbqkPRNBQK")

@@ -18,10 +18,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from config import PIECES, CHESS
 
-
 # ---------------------------------------------------------------------------
 # Piece
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Piece:
@@ -39,15 +39,16 @@ class Piece:
         is_staged:     True when the piece is in the off-board staging zone.
         last_updated:  Unix timestamp of the most recent position update.
     """
-    piece_id:        int
-    color:           str          # 'white' | 'black'
-    rank:            str          # 'pawn' | 'rook' | 'knight' | 'bishop' | 'queen' | 'king'
-    position_mm:     Tuple[float, float] = field(default_factory=lambda: (0.0, 0.0))
+
+    piece_id: int
+    color: str  # 'white' | 'black'
+    rank: str  # 'pawn' | 'rook' | 'knight' | 'bishop' | 'queen' | 'king'
+    position_mm: Tuple[float, float] = field(default_factory=lambda: (0.0, 0.0))
     orientation_deg: float = 0.0
-    battery_v:       float = 0.0
-    is_captured:     bool  = False
-    is_staged:       bool  = False
-    last_updated:    float = field(default_factory=time.time)
+    battery_v: float = 0.0
+    is_captured: bool = False
+    is_staged: bool = False
+    last_updated: float = field(default_factory=time.time)
 
     # ------------------------------------------------------------------
     # Convenience
@@ -56,12 +57,12 @@ class Piece:
     @property
     def rank_char(self) -> str:
         """Single-character label for the piece rank, e.g. 'P', 'Q'."""
-        return PIECES.RANK_CHAR.get(self.rank, '?')
+        return PIECES.RANK_CHAR.get(self.rank, "?")
 
     @property
     def id_hex(self) -> str:
         """Piece ID formatted as a two-digit hex string, e.g. '0A'."""
-        return f'{self.piece_id:02X}'
+        return f"{self.piece_id:02X}"
 
     @property
     def x_mm(self) -> float:
@@ -71,17 +72,20 @@ class Piece:
     def y_mm(self) -> float:
         return self.position_mm[1]
 
-    def update_position(self, x_mm: float, y_mm: float, theta_deg: float, battery_v: float = 0.0) -> None:
+    def update_position(
+        self, x_mm: float, y_mm: float, theta_deg: float, battery_v: float = 0.0
+    ) -> None:
         """Update position, orientation and battery voltage, recording the current timestamp."""
-        self.position_mm     = (x_mm, y_mm)
+        self.position_mm = (x_mm, y_mm)
         self.orientation_deg = theta_deg
-        self.battery_v       = battery_v
-        self.last_updated    = time.time()
+        self.battery_v = battery_v
+        self.last_updated = time.time()
 
 
 # ---------------------------------------------------------------------------
 # BoardState
 # ---------------------------------------------------------------------------
+
 
 class BoardState:
     """Container for all 34 piece objects plus board-level helpers.
@@ -103,28 +107,28 @@ class BoardState:
     def _build_pieces(self) -> None:
         """Construct all 34 Piece objects with home positions and metadata."""
         for pid in range(PIECES.WHITE_ID_START, PIECES.WHITE_ID_END + 1):
-            rank  = PIECES.PIECE_RANKS[pid]
-            pos   = PIECES.HOME_POSITIONS[pid]
+            rank = PIECES.PIECE_RANKS[pid]
+            pos = PIECES.HOME_POSITIONS[pid]
             piece = Piece(
-                piece_id       = pid,
-                color          = 'white',
-                rank           = rank,
-                position_mm    = (float(pos[0]), float(pos[1])),
-                orientation_deg= float(pos[2]),
-                is_staged      = pos[0] < 0,
+                piece_id=pid,
+                color="white",
+                rank=rank,
+                position_mm=(float(pos[0]), float(pos[1])),
+                orientation_deg=float(pos[2]),
+                is_staged=pos[0] < 0,
             )
             self._pieces[pid] = piece
 
         for pid in range(PIECES.BLACK_ID_START, PIECES.BLACK_ID_END + 1):
-            rank  = PIECES.PIECE_RANKS[pid]
-            pos   = PIECES.HOME_POSITIONS[pid]
+            rank = PIECES.PIECE_RANKS[pid]
+            pos = PIECES.HOME_POSITIONS[pid]
             piece = Piece(
-                piece_id       = pid,
-                color          = 'black',
-                rank           = rank,
-                position_mm    = (float(pos[0]), float(pos[1])),
-                orientation_deg= float(pos[2]),
-                is_staged      = pos[0] < 0,
+                piece_id=pid,
+                color="black",
+                rank=rank,
+                position_mm=(float(pos[0]), float(pos[1])),
+                orientation_deg=float(pos[2]),
+                is_staged=pos[0] < 0,
             )
             self._pieces[pid] = piece
 
@@ -153,11 +157,11 @@ class BoardState:
         """Move all pieces to their standard starting positions."""
         for pid, piece in self._pieces.items():
             home = PIECES.HOME_POSITIONS[pid]
-            piece.position_mm     = (float(home[0]), float(home[1]))
+            piece.position_mm = (float(home[0]), float(home[1]))
             piece.orientation_deg = float(home[2])
-            piece.is_captured     = False
-            piece.is_staged       = home[0] < 0
-            piece.last_updated    = time.time()
+            piece.is_captured = False
+            piece.is_staged = home[0] < 0
+            piece.last_updated = time.time()
 
     def update_piece_position(
         self,
@@ -227,7 +231,7 @@ class BoardState:
         if adapter is None:
             return True
 
-        fen      = self.to_fen()
+        fen = self.to_fen()
         uci_move = self._to_uci(piece_id, target_x_mm, target_y_mm)
         if uci_move is None:
             return False

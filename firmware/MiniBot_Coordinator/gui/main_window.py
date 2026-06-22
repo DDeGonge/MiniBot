@@ -30,8 +30,16 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from PyQt6.QtCore import QTimer, pyqtSlot
 from PyQt6.QtWidgets import (
-    QComboBox, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QPushButton,
-    QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from comms.protocol import build_position_request, build_position_command
@@ -42,11 +50,11 @@ from planning.base_planner import MoveCommand
 from simulation.simulator import MotionSimulator
 
 from gui.chessboard_widget import ChessBoardWidget
-from gui.tabs.path_planning_tab    import PathPlanningTab
-from gui.tabs.debug_tab            import DebugTab
-from gui.tabs.system_control_tab   import SystemControlTab
+from gui.tabs.path_planning_tab import PathPlanningTab
+from gui.tabs.debug_tab import DebugTab
+from gui.tabs.system_control_tab import SystemControlTab
 from gui.tabs.position_tracker_tab import PositionTrackerTab
-from gui.tabs.command_looper_tab   import CommandLooperTab
+from gui.tabs.command_looper_tab import CommandLooperTab
 
 # ---------------------------------------------------------------------------
 # Application-wide dark theme stylesheet
@@ -284,11 +292,11 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(_STYLESHEET)
 
         # Shared state
-        self._board      = BoardState()
+        self._board = BoardState()
         self._board.reset_to_home()
-        self._handler    = SerialHandler(self)
-        self._simulator  = MotionSimulator(self._board, parent=self)
-        self._sim_mode   = False  # True when debug tab simulator is active
+        self._handler = SerialHandler(self)
+        self._simulator = MotionSimulator(self._board, parent=self)
+        self._sim_mode = False  # True when debug tab simulator is active
 
         # Sequence-wave dispatcher state.
         self._pending_waves: List[List[MoveCommand]] = []
@@ -304,13 +312,13 @@ class MainWindow(QMainWindow):
         self._poll_timer.timeout.connect(self._on_poll_timer)
 
         # Stale-piece tracking
-        self._last_seen:      Dict[int, float] = {}   # piece_id → monotonic time
-        self._hide_stale:     bool = False
+        self._last_seen: Dict[int, float] = {}  # piece_id → monotonic time
+        self._hide_stale: bool = False
         self._stale_check_timer = QTimer(self)
 
         # Polling config
         self._poll_enabled: bool = True
-        self._poll_target:  int  = 0xFF
+        self._poll_target: int = 0xFF
         self._stale_check_timer.setInterval(2000)
         self._stale_check_timer.timeout.connect(self._on_stale_check_timer)
         self._stale_check_timer.start()
@@ -318,7 +326,7 @@ class MainWindow(QMainWindow):
         # Repaint throttle: update the canvas at a fixed rate rather than
         # on every incoming position message.
         self._repaint_timer = QTimer(self)
-        self._repaint_timer.setInterval(50)   # ~20 Hz
+        self._repaint_timer.setInterval(50)  # ~20 Hz
         self._repaint_timer.start()
 
         self._build_ui()
@@ -328,7 +336,7 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._status_bar: QStatusBar = self.statusBar()
-        self._status_bar.showMessage('Not connected')
+        self._status_bar.showMessage("Not connected")
 
     # ------------------------------------------------------------------
     # UI assembly
@@ -353,27 +361,29 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # --- Always-visible connection bar ---
-        conn_group = QGroupBox('Serial Connection')
+        conn_group = QGroupBox("Serial Connection")
         conn_group_layout = QVBoxLayout(conn_group)
         conn_group_layout.setSpacing(3)
         conn_group_layout.setContentsMargins(6, 6, 6, 6)
 
         conn_row = QHBoxLayout()
         conn_row.setSpacing(6)
-        conn_row.addWidget(QLabel('Port:'))
+        conn_row.addWidget(QLabel("Port:"))
         self._port_combo = QComboBox()
-        self._port_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._port_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
         self._refresh_ports()
         conn_row.addWidget(self._port_combo)
 
-        self._btn_refresh_ports = QPushButton('↺')
+        self._btn_refresh_ports = QPushButton("↺")
         self._btn_refresh_ports.setFixedWidth(35)
-        self._btn_refresh_ports.setToolTip('Refresh serial port list')
+        self._btn_refresh_ports.setToolTip("Refresh serial port list")
         self._btn_refresh_ports.clicked.connect(self._refresh_ports)
         conn_row.addWidget(self._btn_refresh_ports)
         conn_row.addStretch()
 
-        conn_row.addWidget(QLabel('Baud:'))
+        conn_row.addWidget(QLabel("Baud:"))
         self._baud_combo = QComboBox()
         for baud in [9600, 57600, 115200, 250000, 460800, 921600]:
             self._baud_combo.addItem(str(baud), userData=baud)
@@ -382,19 +392,19 @@ class MainWindow(QMainWindow):
             self._baud_combo.setCurrentIndex(default_idx)
         conn_row.addWidget(self._baud_combo)
 
-        self._btn_connect = QPushButton('Connect')
+        self._btn_connect = QPushButton("Connect")
         self._btn_connect.clicked.connect(self._on_connect)
         conn_row.addWidget(self._btn_connect)
 
-        self._btn_disconnect = QPushButton('Disconnect')
+        self._btn_disconnect = QPushButton("Disconnect")
         self._btn_disconnect.setEnabled(False)
         self._btn_disconnect.clicked.connect(self._on_disconnect)
         conn_row.addWidget(self._btn_disconnect)
 
         conn_group_layout.addLayout(conn_row)
 
-        self._conn_status_label = QLabel('Status: Disconnected')
-        self._conn_status_label.setStyleSheet('color: #787878;')
+        self._conn_status_label = QLabel("Status: Disconnected")
+        self._conn_status_label.setStyleSheet("color: #787878;")
         conn_group_layout.addWidget(self._conn_status_label)
 
         right_layout.addWidget(conn_group)
@@ -403,17 +413,17 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._tabs.setMinimumWidth(GUI.CONTROL_PANEL_MIN_WIDTH)
 
-        self._path_tab   = PathPlanningTab(self._board, self)
-        self._debug_tab  = DebugTab(self)
-        self._sys_tab    = SystemControlTab(self)
-        self._track_tab  = PositionTrackerTab(self._board, self)
+        self._path_tab = PathPlanningTab(self._board, self)
+        self._debug_tab = DebugTab(self)
+        self._sys_tab = SystemControlTab(self)
+        self._track_tab = PositionTrackerTab(self._board, self)
         self._looper_tab = CommandLooperTab(self)
 
-        self._tabs.addTab(self._path_tab,   'Path Planning')
-        self._tabs.addTab(self._debug_tab,  'Debug')
-        self._tabs.addTab(self._sys_tab,    'System Control')
-        self._tabs.addTab(self._track_tab,  'Position Tracker')
-        self._tabs.addTab(self._looper_tab, 'Command Looper')
+        self._tabs.addTab(self._path_tab, "Path Planning")
+        self._tabs.addTab(self._debug_tab, "Debug")
+        self._tabs.addTab(self._sys_tab, "System Control")
+        self._tabs.addTab(self._track_tab, "Position Tracker")
+        self._tabs.addTab(self._looper_tab, "Command Looper")
 
         right_layout.addWidget(self._tabs, stretch=1)
         layout.addWidget(right_widget, stretch=0)
@@ -442,7 +452,9 @@ class MainWindow(QMainWindow):
         self._debug_tab.send_raw.connect(self._on_debug_send_raw)
         self._debug_tab.simulator_mode_changed.connect(self._on_sim_mode_changed)
         self._debug_tab.hide_stale_pieces_changed.connect(self._on_hide_stale_changed)
-        self._debug_tab.show_electromagnets_changed.connect(self._board_widget.set_show_electromagnets)
+        self._debug_tab.show_electromagnets_changed.connect(
+            self._board_widget.set_show_electromagnets
+        )
         self._debug_tab.randomize_positions.connect(self._on_randomize_positions)
         self._debug_tab.set_fen_postions.connect(self._on_set_fen_positions)
         self._debug_tab.sim_collision_changed.connect(self._on_sim_collision_changed)
@@ -480,7 +492,14 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     @pyqtSlot(int, float, float, float, float)
-    def _on_position_received(self, piece_id: int, x_mm: float, y_mm: float, theta_deg: float, battery_v: float) -> None:
+    def _on_position_received(
+        self,
+        piece_id: int,
+        x_mm: float,
+        y_mm: float,
+        theta_deg: float,
+        battery_v: float,
+    ) -> None:
         """Update board state; canvas repaint is handled by the repaint timer."""
         self._last_seen[piece_id] = time.monotonic()
         self._board.update_piece_position(piece_id, x_mm, y_mm, theta_deg, battery_v)
@@ -493,18 +512,21 @@ class MainWindow(QMainWindow):
         straight to _on_send_move_commands without touching the queue.
         """
         from planning.enhanced_conflict_planner import EnhancedConflictPlanner
+
         piece = self._board.get_piece(piece_id)
         if piece is None:
             return
-        planner   = EnhancedConflictPlanner()
+        planner = EnhancedConflictPlanner()
         positions = {piece_id: (piece.x_mm, piece.y_mm)}
-        targets   = {piece_id: (x_mm, y_mm)}
-        commands  = planner.plan_moves(positions, targets)
+        targets = {piece_id: (x_mm, y_mm)}
+        commands = planner.plan_moves(positions, targets)
         if commands:
             self._on_send_move_commands(commands)
 
     @pyqtSlot(int, float, float, int)
-    def _on_looper_request_move(self, piece_id: int, x_mm: float, y_mm: float, move_time_ms: int) -> None:
+    def _on_looper_request_move(
+        self, piece_id: int, x_mm: float, y_mm: float, move_time_ms: int
+    ) -> None:
         """Dispatch a move from the command looper.
 
         Mirrors right-click behavior: piece auto-rotates to face the target,
@@ -512,10 +534,10 @@ class MainWindow(QMainWindow):
         to avoid interfering with the wave dispatch timer.
         """
         cmd = MoveCommand(
-            piece_id    = piece_id,
-            target_x_mm = x_mm,
-            target_y_mm = y_mm,
-            duration_ms = move_time_ms,
+            piece_id=piece_id,
+            target_x_mm=x_mm,
+            target_y_mm=y_mm,
+            duration_ms=move_time_ms,
         )
         if self._sim_mode:
             self._simulator.speed_mm_s = self._debug_tab.simulator_speed_mm_s
@@ -562,19 +584,19 @@ class MainWindow(QMainWindow):
         self._reset_wave_dispatch()
         self._sim_mode = enabled
         if enabled:
-            self._status_bar.showMessage('Simulator mode active')
+            self._status_bar.showMessage("Simulator mode active")
         else:
             self._simulator.stop_all()
             if self._handler.is_connected:
-                self._status_bar.showMessage('Connected')
+                self._status_bar.showMessage("Connected")
             else:
-                self._status_bar.showMessage('Not connected')
+                self._status_bar.showMessage("Not connected")
 
     @pyqtSlot()
     def _on_randomize_positions(self) -> None:
         """Scatter all active pieces to random positions with ≥5 mm spacing."""
-        r     = float(PIECES.CIRCLE_RADIUS_MM)
-        gap   = 5.0          # minimum edge-to-edge gap between any two pieces
+        r = float(PIECES.CIRCLE_RADIUS_MM)
+        gap = 5.0  # minimum edge-to-edge gap between any two pieces
         min_d = 2.0 * r + gap
 
         x_lo = float(SIMULATOR.X_MIN_MM) + r
@@ -591,21 +613,22 @@ class MainWindow(QMainWindow):
                 cy = random.uniform(y_lo, y_hi)
                 if all(math.hypot(cx - px, cy - py) >= min_d for px, py in placed):
                     placed.append((cx, cy))
-                    self._board.update_piece_position(piece.piece_id, cx, cy, piece.orientation_deg, 0.0)
+                    self._board.update_piece_position(
+                        piece.piece_id, cx, cy, piece.orientation_deg, 0.0
+                    )
                     self._last_seen[piece.piece_id] = time.monotonic()
                     break
 
         self._board_widget.refresh()
-        self._debug_tab.on_sim_log('SIM: positions randomized')
-        
+        self._debug_tab.on_sim_log("SIM: positions randomized")
+
     @pyqtSlot(str)
     def _on_set_fen_positions(self, fen: str) -> None:
         fen_positions = fen.split(" ")[0]
         fen_ranks = fen_positions.split("/")
-        
-        
+
         piece_cords = []
-        
+
         for index, rank_data in enumerate(fen_ranks):
             rank_number = 8 - index
             file_index = 0
@@ -618,55 +641,62 @@ class MainWindow(QMainWindow):
                 file_letter = chr(ord("a") + file_index)
                 square = f"{file_letter}{rank_number}"
 
-                
                 piece_cords.append((character, rank_number, file_index))
 
                 file_index += 1
-                
+
         def rankFileToMM(x):
-            return x*PIECES._S - PIECES._S//2
-                
-        for current_piece_index,  piece in enumerate(self._board.active_pieces()):
+            return x * PIECES._S - PIECES._S // 2
+
+        for current_piece_index, piece in enumerate(self._board.active_pieces()):
             piece_found = False
             for index, (char, rank, file) in enumerate(piece_cords):
                 color = "black" if char.islower() else "white"
                 piece_letter = piece.rank[0] if piece.rank != "knight" else "n"
                 if piece_letter == char.lower() and piece.color == color:
                     print(rank, file)
-                    self._board.update_piece_position(piece.piece_id, rankFileToMM(file) + PIECES._S, rankFileToMM(rank), piece.orientation_deg, 0.0)
+                    self._board.update_piece_position(
+                        piece.piece_id,
+                        rankFileToMM(file) + PIECES._S,
+                        rankFileToMM(rank),
+                        piece.orientation_deg,
+                        0.0,
+                    )
                     piece_cords.pop(index)
                     self._last_seen[piece.piece_id] = time.monotonic()
                     piece_found = True
                     break
             if not piece_found:
-                self._board.update_piece_position(piece.piece_id, PIECES.GRAVEYARD_POSITIONS[piece.piece_id][0], PIECES.GRAVEYARD_POSITIONS[piece.piece_id][1], piece.orientation_deg, 0.0)
-                    
-               
-                    
-            
+                self._board.update_piece_position(
+                    piece.piece_id,
+                    PIECES.GRAVEYARD_POSITIONS[piece.piece_id][0],
+                    PIECES.GRAVEYARD_POSITIONS[piece.piece_id][1],
+                    piece.orientation_deg,
+                    0.0,
+                )
 
     @pyqtSlot(bool)
     def _on_connection_changed(self, connected: bool) -> None:
         if connected:
-            self._conn_status_label.setText('Status: Connected')
-            self._conn_status_label.setStyleSheet('color: #7cbb7c; font-weight: bold;')
-            self._status_bar.showMessage('Connected')
+            self._conn_status_label.setText("Status: Connected")
+            self._conn_status_label.setStyleSheet("color: #7cbb7c; font-weight: bold;")
+            self._status_bar.showMessage("Connected")
             self._poll_timer.start()
         else:
-            self._conn_status_label.setText('Status: Disconnected')
-            self._conn_status_label.setStyleSheet('color: #787878;')
-            self._status_bar.showMessage('Disconnected')
+            self._conn_status_label.setText("Status: Disconnected")
+            self._conn_status_label.setStyleSheet("color: #787878;")
+            self._status_bar.showMessage("Disconnected")
             self._poll_timer.stop()
         self._btn_connect.setEnabled(not connected)
         self._btn_disconnect.setEnabled(connected)
 
     @pyqtSlot(str)
     def _on_serial_error(self, message: str) -> None:
-        self._conn_status_label.setText(f'Error: {message}')
-        self._conn_status_label.setStyleSheet('color: #f48771; font-weight: bold;')
+        self._conn_status_label.setText(f"Error: {message}")
+        self._conn_status_label.setStyleSheet("color: #f48771; font-weight: bold;")
         self._btn_connect.setEnabled(True)
         self._btn_disconnect.setEnabled(False)
-        self._status_bar.showMessage(f'Serial error: {message}')
+        self._status_bar.showMessage(f"Serial error: {message}")
 
     @pyqtSlot(bool)
     def _on_hide_stale_changed(self, hide: bool) -> None:
@@ -729,11 +759,11 @@ class MainWindow(QMainWindow):
         port = self._port_combo.currentText()
         baud = self._baud_combo.currentData() or COMM.DEFAULT_BAUD_RATE
         if not port:
-            self._conn_status_label.setText('Error: No port selected')
-            self._conn_status_label.setStyleSheet('color: red;')
+            self._conn_status_label.setText("Error: No port selected")
+            self._conn_status_label.setStyleSheet("color: red;")
             return
-        self._conn_status_label.setText('Status: Connecting…')
-        self._conn_status_label.setStyleSheet('color: orange;')
+        self._conn_status_label.setText("Status: Connecting…")
+        self._conn_status_label.setStyleSheet("color: orange;")
         self._btn_connect.setEnabled(False)
         self._handler.connect_port(port, baud)
 
@@ -748,19 +778,20 @@ class MainWindow(QMainWindow):
         Returns None if the data is not a valid position command.
         """
         from config import COMM
+
         try:
             line = data.decode(COMM.ENCODING).strip()
             if not line.startswith(COMM.MSG_PREFIX):
                 return None
-            parts = line[len(COMM.MSG_PREFIX):].split(COMM.DELIMITER)
+            parts = line[len(COMM.MSG_PREFIX) :].split(COMM.DELIMITER)
             if int(parts[0]) != COMM.CMD_POSITION or len(parts) != 6:
                 return None
             return MoveCommand(
-                piece_id     = int(parts[1], 0),
-                target_x_mm  = float(parts[2]),
-                target_y_mm  = float(parts[3]),
-                target_theta = math.degrees(float(parts[4])),
-                duration_ms  = int(parts[5]),
+                piece_id=int(parts[1], 0),
+                target_x_mm=float(parts[2]),
+                target_y_mm=float(parts[3]),
+                target_theta=math.degrees(float(parts[4])),
+                duration_ms=int(parts[5]),
             )
         except (ValueError, IndexError, UnicodeDecodeError):
             return None
@@ -821,13 +852,15 @@ class MainWindow(QMainWindow):
         piece = self._board.get_piece(cmd.piece_id)
         if piece is None:
             theta = cmd.target_theta if cmd.target_theta is not None else 0.0
-            self._handler.send(build_position_command(
-                cmd.piece_id,
-                cmd.target_x_mm,
-                cmd.target_y_mm,
-                theta,
-                cmd.duration_ms,
-            ))
+            self._handler.send(
+                build_position_command(
+                    cmd.piece_id,
+                    cmd.target_x_mm,
+                    cmd.target_y_mm,
+                    theta,
+                    cmd.duration_ms,
+                )
+            )
             return max(1, cmd.duration_ms)
 
         dx = cmd.target_x_mm - piece.x_mm
@@ -843,28 +876,38 @@ class MainWindow(QMainWindow):
         else:
             rotate_theta = piece.orientation_deg
 
-        rot_angle_deg = abs((rotate_theta - piece.orientation_deg + 180.0) % 360.0 - 180.0)
+        rot_angle_deg = abs(
+            (rotate_theta - piece.orientation_deg + 180.0) % 360.0 - 180.0
+        )
         rot_duration_ms = 0
         if rot_angle_deg > 0.5:
-            rot_duration_ms = max(1, int(
-                math.radians(rot_angle_deg)
-                / SIMULATOR.ROTATION_ANGULAR_VEL_RAD_S * 1000
-            ))
-            self._handler.send(build_position_command(
-                cmd.piece_id,
-                piece.x_mm,
-                piece.y_mm,
-                rotate_theta,
-                rot_duration_ms,
-            ))
+            rot_duration_ms = max(
+                1,
+                int(
+                    math.radians(rot_angle_deg)
+                    / SIMULATOR.ROTATION_ANGULAR_VEL_RAD_S
+                    * 1000
+                ),
+            )
+            self._handler.send(
+                build_position_command(
+                    cmd.piece_id,
+                    piece.x_mm,
+                    piece.y_mm,
+                    rotate_theta,
+                    rot_duration_ms,
+                )
+            )
 
-        self._handler.send(build_position_command(
-            cmd.piece_id,
-            cmd.target_x_mm,
-            cmd.target_y_mm,
-            rotate_theta,
-            cmd.duration_ms,
-        ))
+        self._handler.send(
+            build_position_command(
+                cmd.piece_id,
+                cmd.target_x_mm,
+                cmd.target_y_mm,
+                rotate_theta,
+                cmd.duration_ms,
+            )
+        )
         return rot_duration_ms + max(1, cmd.duration_ms)
 
     @pyqtSlot(int)

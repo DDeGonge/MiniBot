@@ -19,14 +19,14 @@ class DirectPlanner(BasePlanner):
 
     @property
     def name(self) -> str:
-        return 'Direct (debug only)'
+        return "Direct (debug only)"
 
     def plan_moves(
         self,
         piece_positions: Dict[int, Tuple[float, float]],
-        targets:         Dict[int, Tuple[float, float]],
-        orientations:    Optional[Dict[int, float]] = None,
-        validator:       Optional[Callable[[int, float, float], bool]] = None,
+        targets: Dict[int, Tuple[float, float]],
+        orientations: Optional[Dict[int, float]] = None,
+        validator: Optional[Callable[[int, float, float], bool]] = None,
     ) -> List[MoveCommand]:
         del orientations
         commands: List[MoveCommand] = []
@@ -35,13 +35,16 @@ class DirectPlanner(BasePlanner):
                 continue
             sx, sy = piece_positions[pid]
             import math
+
             dist = math.hypot(tx - sx, ty - sy)
-            commands.append(MoveCommand(
-                piece_id     = pid,
-                target_x_mm  = tx,
-                target_y_mm  = ty,
-                duration_ms  = self.duration_for_distance(dist),
-                sequence_num = seq,
-                planner_debug= 'direct',
-            ))
+            commands.append(
+                MoveCommand(
+                    piece_id=pid,
+                    target_x_mm=tx,
+                    target_y_mm=ty,
+                    duration_ms=self.duration_for_distance(dist),
+                    sequence_num=seq,
+                    planner_debug="direct",
+                )
+            )
         return commands

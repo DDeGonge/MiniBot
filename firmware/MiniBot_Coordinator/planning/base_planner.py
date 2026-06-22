@@ -20,10 +20,10 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from config import PLANNING
 
-
 # ---------------------------------------------------------------------------
 # MoveCommand — the unit of work returned by a planner
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MoveCommand:
@@ -39,14 +39,15 @@ class MoveCommand:
         uci_move:      Optional algebraic notation for chess engine logging.
         planner_debug: Optional planner debug note for queue/log visibility.
     """
-    piece_id:     int
-    target_x_mm:  float
-    target_y_mm:  float
+
+    piece_id: int
+    target_x_mm: float
+    target_y_mm: float
     target_theta: Optional[float] = None
-    duration_ms:  int             = PLANNING.DEFAULT_MOVE_DURATION_MS
-    sequence_num: int             = 0
-    uci_move:     Optional[str]   = None
-    planner_debug: Optional[str]  = None
+    duration_ms: int = PLANNING.DEFAULT_MOVE_DURATION_MS
+    sequence_num: int = 0
+    uci_move: Optional[str] = None
+    planner_debug: Optional[str] = None
 
     def distance_mm(self, from_x: float, from_y: float) -> float:
         """Euclidean distance from a given origin to this command's target."""
@@ -56,6 +57,7 @@ class MoveCommand:
 # ---------------------------------------------------------------------------
 # BasePlanner
 # ---------------------------------------------------------------------------
+
 
 class BasePlanner(ABC):
     """Abstract base class for path planning algorithms.
@@ -133,6 +135,7 @@ class BasePlanner(ABC):
 # Factory helper — load a planner by display name from the registry
 # ---------------------------------------------------------------------------
 
+
 def load_planner(display_name: str) -> BasePlanner:
     """Instantiate a planner by its display name as defined in PLANNING.PLANNERS.
 
@@ -148,7 +151,8 @@ def load_planner(display_name: str) -> BasePlanner:
         AttributeError: Class not found in module.
     """
     import importlib
+
     module_path, class_name = PLANNING.PLANNERS[display_name]
     module = importlib.import_module(module_path)
-    cls    = getattr(module, class_name)
+    cls = getattr(module, class_name)
     return cls()

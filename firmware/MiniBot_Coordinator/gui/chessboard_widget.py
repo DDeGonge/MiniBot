@@ -28,7 +28,13 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui import (
-    QBrush, QColor, QFont, QMouseEvent, QPainter, QPaintEvent, QPen,
+    QBrush,
+    QColor,
+    QFont,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
 )
 from PyQt6.QtWidgets import QWidget
 
@@ -45,31 +51,37 @@ class ChessBoardWidget(QWidget):
     while preserving the aspect ratio.
     """
 
-    piece_selected = pyqtSignal(int)               # piece_id
-    target_set     = pyqtSignal(int, float, float) # piece_id, x_mm, y_mm  (left-click → plan + queue)
-    target_queued  = pyqtSignal(int, float, float) # piece_id, x_mm, y_mm  (right-click → immediate dispatch)
+    piece_selected = pyqtSignal(int)  # piece_id
+    target_set = pyqtSignal(
+        int, float, float
+    )  # piece_id, x_mm, y_mm  (left-click → plan + queue)
+    target_queued = pyqtSignal(
+        int, float, float
+    )  # piece_id, x_mm, y_mm  (right-click → immediate dispatch)
 
     # ------------------------------------------------------------------
     # Logical canvas constants (mm)
     # ------------------------------------------------------------------
-    _LW = BOARD.CANVAS_WIDTH_MM     # 650
-    _LH = BOARD.CANVAS_HEIGHT_MM    # 450
-    _OX = BOARD.BORDER_LEFT_MM      # 125  offset of playing area origin
-    _OY = BOARD.BORDER_BOTTOM_MM    # 25
+    _LW = BOARD.CANVAS_WIDTH_MM  # 650
+    _LH = BOARD.CANVAS_HEIGHT_MM  # 450
+    _OX = BOARD.BORDER_LEFT_MM  # 125  offset of playing area origin
+    _OY = BOARD.BORDER_BOTTOM_MM  # 25
 
-    def __init__(self, board_state: BoardState, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, board_state: BoardState, parent: Optional[QWidget] = None
+    ) -> None:
         super().__init__(parent)
         self._board = board_state
         self._selected_id: Optional[int] = None
         self._target: Optional[Tuple[float, float]] = None  # mm in playing area
-        self._hide_stale:          bool = False
-        self._stale_ids:           Set[int] = set()
+        self._hide_stale: bool = False
+        self._stale_ids: Set[int] = set()
         self._show_electromagnets: bool = False
         # Plan visualization: list of (x0, y0, x1, y1, wave_idx, total_waves)
         self._plan_arrows: List[Tuple[float, float, float, float, int, int]] = []
 
         self.setMinimumSize(
-            int(BOARD.CANVAS_WIDTH_MM  * GUI.SCALE_FACTOR),
+            int(BOARD.CANVAS_WIDTH_MM * GUI.SCALE_FACTOR),
             int(BOARD.CANVAS_HEIGHT_MM * GUI.SCALE_FACTOR),
         )
         self.setMouseTracking(False)
@@ -87,7 +99,7 @@ class ChessBoardWidget(QWidget):
 
     def set_stale_pieces(self, stale_ids: Set[int], hide: bool) -> None:
         """Update the set of piece IDs considered stale and whether to hide them."""
-        self._stale_ids  = stale_ids
+        self._stale_ids = stale_ids
         self._hide_stale = hide
         self.update()
 
@@ -98,7 +110,7 @@ class ChessBoardWidget(QWidget):
 
     def set_plan_visualization(
         self,
-        commands:          Optional[List[MoveCommand]],
+        commands: Optional[List[MoveCommand]],
         initial_positions: Dict[int, Tuple[float, float]],
     ) -> None:
         """Compute and store colored arrow draw records for planned moves.
@@ -141,13 +153,13 @@ class ChessBoardWidget(QWidget):
 
     def clear_selection(self) -> None:
         self._selected_id = None
-        self._target      = None
+        self._target = None
         self.update()
 
     def set_target(self, piece_id: int, x_mm: float, y_mm: float) -> None:
         """Programmatically set a target indicator for a piece."""
         self._selected_id = piece_id
-        self._target      = (x_mm, y_mm)
+        self._target = (x_mm, y_mm)
         self.update()
 
     # ------------------------------------------------------------------
@@ -157,8 +169,8 @@ class ChessBoardWidget(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.setFocus()
         board_x, board_y = self._widget_to_mm(event.position())
-        clicked_pid      = self._piece_at(board_x, board_y)
-        btn              = event.button()
+        clicked_pid = self._piece_at(board_x, board_y)
+        btn = event.button()
 
         # ── Right-click ──────────────────────────────────────────────────
         if btn == Qt.MouseButton.RightButton:
@@ -178,14 +190,14 @@ class ChessBoardWidget(QWidget):
             # No selection: try to select a piece
             if clicked_pid is not None:
                 self._selected_id = clicked_pid
-                self._target       = None
+                self._target = None
                 self.update()
                 self.piece_selected.emit(clicked_pid)
         else:
             if clicked_pid is not None and clicked_pid != self._selected_id:
                 # Clicked a different piece: re-select it
                 self._selected_id = clicked_pid
-                self._target       = None
+                self._target = None
                 self.update()
                 self.piece_selected.emit(clicked_pid)
             elif clicked_pid == self._selected_id:
@@ -224,12 +236,12 @@ class ChessBoardWidget(QWidget):
         # Scale to preserve aspect ratio, centred in widget
         scale_x = w / self._LW
         scale_y = h / self._LH
-        scale   = min(scale_x, scale_y)
+        scale = min(scale_x, scale_y)
 
         canvas_w_px = int(self._LW * scale)
         canvas_h_px = int(self._LH * scale)
-        offset_x    = (w - canvas_w_px) // 2
-        offset_y    = (h - canvas_h_px) // 2
+        offset_x = (w - canvas_w_px) // 2
+        offset_y = (h - canvas_h_px) // 2
 
         painter.translate(offset_x, offset_y)
         painter.scale(scale, scale)
@@ -239,9 +251,9 @@ class ChessBoardWidget(QWidget):
         # Note: canvas Y-down coords have origin at top-left of canvas.
         # playing-area (0,0) is at canvas (_OX, _LH - _OY) in Y-down mm.
 
-        self._scale     = scale
-        self._offset_x  = offset_x
-        self._offset_y  = offset_y
+        self._scale = scale
+        self._offset_x = offset_x
+        self._offset_y = offset_y
 
         self._draw_background(painter)
         self._draw_outer_outline(painter)
@@ -264,8 +276,7 @@ class ChessBoardWidget(QWidget):
         return cx, cy
 
     def _draw_background(self, p: QPainter) -> None:
-        p.fillRect(QRectF(0, 0, self._LW, self._LH),
-                   QColor(GUI.BOARD_BACKGROUND_COLOR))
+        p.fillRect(QRectF(0, 0, self._LW, self._LH), QColor(GUI.BOARD_BACKGROUND_COLOR))
 
     def _draw_outer_outline(self, p: QPainter) -> None:
         pen = QPen(QColor(GUI.BOARD_OUTLINE_COLOR))
@@ -290,7 +301,9 @@ class ChessBoardWidget(QWidget):
 
                 # Checkerboard: light if (row+col) even
                 light = (row + col) % 2 == 0
-                color = QColor(GUI.LIGHT_SQUARE_COLOR if light else GUI.DARK_SQUARE_COLOR)
+                color = QColor(
+                    GUI.LIGHT_SQUARE_COLOR if light else GUI.DARK_SQUARE_COLOR
+                )
                 p.fillRect(QRectF(cx, cy - s, s, s), color)
 
         # Grid lines
@@ -299,8 +312,8 @@ class ChessBoardWidget(QWidget):
         p.setPen(pen)
         pa_x0, pa_y0 = 0.0, 0.0
         pa_x1, pa_y1 = float(n * s), float(n * s)
-        cx0, cy_top  = self._pa_to_canvas(pa_x0, pa_y1)
-        cx1, cy_bot  = self._pa_to_canvas(pa_x1, pa_y0)
+        cx0, cy_top = self._pa_to_canvas(pa_x0, pa_y1)
+        cx1, cy_bot = self._pa_to_canvas(pa_x1, pa_y0)
 
         # Vertical lines
         for col in range(n + 1):
@@ -335,16 +348,16 @@ class ChessBoardWidget(QWidget):
                 b = int(0x20 + (0x30 - 0x20) * s)
             return QColor(r, g, b, 200)
 
-        ARROW_HEAD_MM  = 8.0
+        ARROW_HEAD_MM = 8.0
         ARROW_HALF_ANG = math.radians(25)
-        LINE_W         = 2.0
+        LINE_W = 2.0
 
-        for (x0, y0, x1, y1, wave_idx, total_waves) in self._plan_arrows:
+        for x0, y0, x1, y1, wave_idx, total_waves in self._plan_arrows:
             cx0, cy0 = self._pa_to_canvas(x0, y0)
             cx1, cy1 = self._pa_to_canvas(x1, y1)
 
             color = _wave_color(wave_idx, total_waves)
-            pen   = QPen(color)
+            pen = QPen(color)
             pen.setWidthF(LINE_W)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -364,15 +377,16 @@ class ChessBoardWidget(QWidget):
             sin_a = math.sin(ARROW_HALF_ANG)
             # Two wing points
             w1x = bx + (-uy * sin_a + ux * (cos_a - 1)) * ARROW_HEAD_MM
-            w1y = by + ( ux * sin_a + uy * (cos_a - 1)) * ARROW_HEAD_MM
-            w2x = bx + ( uy * sin_a + ux * (cos_a - 1)) * ARROW_HEAD_MM
+            w1y = by + (ux * sin_a + uy * (cos_a - 1)) * ARROW_HEAD_MM
+            w2x = bx + (uy * sin_a + ux * (cos_a - 1)) * ARROW_HEAD_MM
             w2y = by + (-ux * sin_a + uy * (cos_a - 1)) * ARROW_HEAD_MM
 
             from PyQt6.QtGui import QPolygonF
-            tip   = QPointF(cx1, cy1)
+
+            tip = QPointF(cx1, cy1)
             wing1 = QPointF(w1x, w1y)
             wing2 = QPointF(w2x, w2y)
-            poly  = QPolygonF([tip, wing1, wing2])
+            poly = QPolygonF([tip, wing1, wing2])
 
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(color))
@@ -385,9 +399,9 @@ class ChessBoardWidget(QWidget):
 
         outer_r = ELECTROMAGNETS.OD_MM / 2.0
         inner_r = ELECTROMAGNETS.ID_MM / 2.0
-        ring_w  = outer_r - inner_r
+        ring_w = outer_r - inner_r
 
-        ring_color = QColor(200, 200, 200, 90)   # light grey, semi-transparent
+        ring_color = QColor(200, 200, 200, 90)  # light grey, semi-transparent
         pen = QPen(ring_color)
         pen.setWidthF(ring_w)
         pen.setCapStyle(Qt.PenCapStyle.FlatCap)
@@ -395,7 +409,7 @@ class ChessBoardWidget(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         mid_r = (outer_r + inner_r) / 2.0
-        for (x_mm, y_mm) in ELECTROMAGNETS.POSITIONS:
+        for x_mm, y_mm in ELECTROMAGNETS.POSITIONS:
             cx, cy = self._pa_to_canvas(x_mm, y_mm)
             p.drawEllipse(QPointF(cx, cy), mid_r, mid_r)
 
@@ -424,12 +438,12 @@ class ChessBoardWidget(QWidget):
 
     def _draw_piece(self, p: QPainter, piece: Piece, stale: bool = False) -> None:
         cx, cy = self._pa_to_canvas(piece.x_mm, piece.y_mm)
-        r      = float(PIECES.CIRCLE_RADIUS_MM)
-        is_sel = (piece.piece_id == self._selected_id)
+        r = float(PIECES.CIRCLE_RADIUS_MM)
+        is_sel = piece.piece_id == self._selected_id
 
-        white  = piece.color == 'white'
-        fill   = QColor(GUI.WHITE_PIECE_FILL   if white else GUI.BLACK_PIECE_FILL)
-        outline= QColor(GUI.WHITE_PIECE_OUTLINE if white else GUI.BLACK_PIECE_OUTLINE)
+        white = piece.color == "white"
+        fill = QColor(GUI.WHITE_PIECE_FILL if white else GUI.BLACK_PIECE_FILL)
+        outline = QColor(GUI.WHITE_PIECE_OUTLINE if white else GUI.BLACK_PIECE_OUTLINE)
 
         # Dim stale pieces
         if stale:
@@ -452,14 +466,17 @@ class ChessBoardWidget(QWidget):
         p.drawEllipse(QPointF(cx, cy), r, r)
 
         # --- Orientation line (from center outward in facing direction) ---
-        ol      = float(PIECES.ORIENTATION_LINE_MM)
+        ol = float(PIECES.ORIENTATION_LINE_MM)
         # theta=0 means facing +X; canvas uses Y-down so negate the sin term
         theta_canvas = math.radians(piece.orientation_deg)
         ex = cx + ol * math.cos(theta_canvas)
         ey = cy - ol * math.sin(theta_canvas)
 
-        ori_color = QColor(GUI.ORIENTATION_LINE_COLOR_WHITE if white
-                           else GUI.ORIENTATION_LINE_COLOR_BLACK)
+        ori_color = QColor(
+            GUI.ORIENTATION_LINE_COLOR_WHITE
+            if white
+            else GUI.ORIENTATION_LINE_COLOR_BLACK
+        )
         ori_pen = QPen(ori_color)
         ori_pen.setWidthF(PIECES.ORIENTATION_LINE_WIDTH_MM)
         ori_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
@@ -468,7 +485,7 @@ class ChessBoardWidget(QWidget):
 
         # --- Rank label ---
         p.setPen(QPen(outline))
-        rank_font = QFont('Arial', PIECES.LABEL_FONT_SIZE_PT, QFont.Weight.Bold)
+        rank_font = QFont("Arial", PIECES.LABEL_FONT_SIZE_PT, QFont.Weight.Bold)
         rank_font.setPixelSize(int(r * 0.75))
         p.setFont(rank_font)
         p.drawText(
@@ -478,7 +495,7 @@ class ChessBoardWidget(QWidget):
         )
 
         # --- ID label (small, below rank) ---
-        id_font = QFont('Courier', PIECES.ID_FONT_SIZE_PT)
+        id_font = QFont("Courier", PIECES.ID_FONT_SIZE_PT)
         id_font.setPixelSize(int(r * 0.45))
         p.setFont(id_font)
         p.drawText(
@@ -508,7 +525,7 @@ class ChessBoardWidget(QWidget):
     def _piece_at(self, pa_x: float, pa_y: float) -> Optional[int]:
         """Return the piece_id of the piece closest to (pa_x, pa_y), if within radius."""
         r = float(PIECES.CIRCLE_RADIUS_MM)
-        closest_id   = None
+        closest_id = None
         closest_dist = r + 1.0
 
         for piece in self._board.all_pieces():
@@ -517,7 +534,7 @@ class ChessBoardWidget(QWidget):
             dist = math.hypot(pa_x - piece.x_mm, pa_y - piece.y_mm)
             if dist <= r and dist < closest_dist:
                 closest_dist = dist
-                closest_id   = piece.piece_id
+                closest_id = piece.piece_id
 
         return closest_id
 
@@ -527,11 +544,11 @@ class ChessBoardWidget(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        self._scale    = GUI.SCALE_FACTOR
+        self._scale = GUI.SCALE_FACTOR
         self._offset_x = 0
         self._offset_y = 0
 
     # Provide defaults so attribute access before first paint() is safe
-    _scale    = GUI.SCALE_FACTOR
+    _scale = GUI.SCALE_FACTOR
     _offset_x = 0
     _offset_y = 0

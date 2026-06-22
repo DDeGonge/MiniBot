@@ -33,10 +33,10 @@ from typing import Optional, Union
 
 from config import COMM
 
-
 # ---------------------------------------------------------------------------
 # Parsed message dataclass
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ParsedMessage:
@@ -61,25 +61,27 @@ class ParsedMessage:
         parse_error:  Error message text, present for RESP_PARSE_ERROR only.
         raw:          The original raw string for logging / debug.
     """
-    msg_type:     Union[int, str]
-    piece_id:     Optional[int]   = None
-    x_mm:         Optional[float] = None
-    y_mm:         Optional[float] = None
-    theta_deg:    Optional[float] = None
-    timestamp_ms: Optional[int]   = None
-    battery_v:    Optional[float] = None
-    err_type:     Optional[int]   = None
-    reason:       Optional[str]   = None
-    mag_x:        Optional[float] = None
-    mag_y:        Optional[float] = None
-    mag_z:        Optional[float] = None
-    parse_error:  Optional[str]   = None
-    raw:          str             = ''
+
+    msg_type: Union[int, str]
+    piece_id: Optional[int] = None
+    x_mm: Optional[float] = None
+    y_mm: Optional[float] = None
+    theta_deg: Optional[float] = None
+    timestamp_ms: Optional[int] = None
+    battery_v: Optional[float] = None
+    err_type: Optional[int] = None
+    reason: Optional[str] = None
+    mag_x: Optional[float] = None
+    mag_y: Optional[float] = None
+    mag_z: Optional[float] = None
+    parse_error: Optional[str] = None
+    raw: str = ""
 
 
 # ---------------------------------------------------------------------------
 # Command builders  (host → ESP32)
 # ---------------------------------------------------------------------------
+
 
 def build_motor_test(
     piece_id: int,
@@ -192,6 +194,7 @@ def build_ping() -> bytes:
 # Response parser  (ESP32 → host)
 # ---------------------------------------------------------------------------
 
+
 def parse_line(raw: Union[str, bytes]) -> ParsedMessage:
     """Parse one newline-terminated line from the ESP32.
 
@@ -210,71 +213,71 @@ def parse_line(raw: Union[str, bytes]) -> ParsedMessage:
         try:
             raw = raw.decode(COMM.ENCODING)
         except UnicodeDecodeError:
-            return ParsedMessage(msg_type='UNKNOWN', raw=repr(raw))
+            return ParsedMessage(msg_type="UNKNOWN", raw=repr(raw))
 
     raw = raw.strip()
 
     if not raw:
-        return ParsedMessage(msg_type='UNKNOWN', raw=raw)
+        return ParsedMessage(msg_type="UNKNOWN", raw=raw)
 
     # All valid frames start with '>'
     if not raw.startswith(COMM.MSG_PREFIX):
-        return ParsedMessage(msg_type='UNKNOWN', raw=raw)
+        return ParsedMessage(msg_type="UNKNOWN", raw=raw)
 
-    body = raw[len(COMM.MSG_PREFIX):]
+    body = raw[len(COMM.MSG_PREFIX) :]
     parts = body.split(COMM.DELIMITER)
 
     # Parse error from ESP: >ERR,{message}
     if parts[0] == COMM.RESP_PARSE_ERROR:
-        message = COMM.DELIMITER.join(parts[1:]) if len(parts) > 1 else ''
+        message = COMM.DELIMITER.join(parts[1:]) if len(parts) > 1 else ""
         return ParsedMessage(
-            msg_type    = COMM.RESP_PARSE_ERROR,
-            parse_error = message,
-            raw         = raw,
+            msg_type=COMM.RESP_PARSE_ERROR,
+            parse_error=message,
+            raw=raw,
         )
 
     try:
         msg_id = int(parts[0])
     except (ValueError, IndexError):
-        return ParsedMessage(msg_type='UNKNOWN', raw=raw)
+        return ParsedMessage(msg_type="UNKNOWN", raw=raw)
 
     try:
         if msg_id == COMM.RESP_ACK and len(parts) == 7:
             # >3,{id},{x_mm},{y_mm},{theta_rad},{timestamp_ms},{battery_v}
             theta_deg = math.degrees(float(parts[4]))
             return ParsedMessage(
-                msg_type     = COMM.RESP_ACK,
-                piece_id     = int(parts[1], 0),
-                x_mm         = float(parts[2]),
-                y_mm         = float(parts[3]),
-                theta_deg    = theta_deg,
-                timestamp_ms = int(parts[5]),
-                battery_v    = float(parts[6]),
-                raw          = raw,
+                msg_type=COMM.RESP_ACK,
+                piece_id=int(parts[1], 0),
+                x_mm=float(parts[2]),
+                y_mm=float(parts[3]),
+                theta_deg=theta_deg,
+                timestamp_ms=int(parts[5]),
+                battery_v=float(parts[6]),
+                raw=raw,
             )
 
         if msg_id == COMM.RESP_NACK and len(parts) == 4:
             # >4,{id},{err_type},{timestamp_ms}
             err_type_val = int(parts[2])
             return ParsedMessage(
-                msg_type     = COMM.RESP_NACK,
-                piece_id     = int(parts[1], 0),
-                err_type     = err_type_val,
-                reason       = str(err_type_val),
-                timestamp_ms = int(parts[3]),
-                raw          = raw,
+                msg_type=COMM.RESP_NACK,
+                piece_id=int(parts[1], 0),
+                err_type=err_type_val,
+                reason=str(err_type_val),
+                timestamp_ms=int(parts[3]),
+                raw=raw,
             )
 
         if msg_id == COMM.RESP_MAG_FIELD and len(parts) == 6:
             # >6,{id},{bx},{by},{bz},{timestamp_ms}
             return ParsedMessage(
-                msg_type     = COMM.RESP_MAG_FIELD,
-                piece_id     = int(parts[1], 0),
-                mag_x        = float(parts[2]),
-                mag_y        = float(parts[3]),
-                mag_z        = float(parts[4]),
-                timestamp_ms = int(parts[5]),
-                raw          = raw,
+                msg_type=COMM.RESP_MAG_FIELD,
+                piece_id=int(parts[1], 0),
+                mag_x=float(parts[2]),
+                mag_y=float(parts[3]),
+                mag_z=float(parts[4]),
+                timestamp_ms=int(parts[5]),
+                raw=raw,
             )
 
         if msg_id == COMM.RESP_PONG and len(parts) == 1:
@@ -284,4 +287,4 @@ def parse_line(raw: Union[str, bytes]) -> ParsedMessage:
     except (ValueError, IndexError):
         pass
 
-    return ParsedMessage(msg_type='UNKNOWN', raw=raw)
+    return ParsedMessage(msg_type="UNKNOWN", raw=raw)
