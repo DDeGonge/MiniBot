@@ -10,10 +10,12 @@ volatile int64_t nextFrameStartUs = 0;
 
 // Initialize electromagnets
 void initElectromagnets() {
-  if (EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) > EMAG_FRAME_LEN_MS) {
-    DEBUG_PRINTLN("WARNING: Electromagnet on-time exceeds frame length! Adjust timing parameters.");
+  if (EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) >
+      EMAG_FRAME_LEN_MS) {
+    DEBUG_PRINTLN("WARNING: Electromagnet on-time exceeds frame length! Adjust "
+                  "timing parameters.");
   }
-  
+
   // Configure all electromagnet pins as outputs, start disabled
   for (int i = 0; i < EMAG_COUNT; i++) {
     pinMode(EMAG_PINS_A[i], OUTPUT);
@@ -21,7 +23,7 @@ void initElectromagnets() {
     digitalWrite(EMAG_PINS_A[i], LOW);
     digitalWrite(EMAG_PINS_B[i], LOW);
   }
-  
+
   DEBUG_PRINTLN("Electromagnets initialized");
 }
 
@@ -30,7 +32,7 @@ bool setElectromagnet(uint8_t emag_i, bool enabled, bool forward) {
     DEBUG_PRINTF("Invalid electromagnet index: %d\n", emag_i);
     return false;
   }
-  
+
   if (!enabled) {
     digitalWrite(EMAG_PINS_A[emag_i], LOW);
     digitalWrite(EMAG_PINS_B[emag_i], LOW);
@@ -57,26 +59,25 @@ void setElectromagnetEnabled(bool enabled) {
   if (!enabled) {
     setAllElectromagnets(false);
   }
-  DEBUG_PRINTF("Electromagnet cycling %s\n",
-                enabled ? "ENABLED" : "DISABLED");
+  DEBUG_PRINTF("Electromagnet cycling %s\n", enabled ? "ENABLED" : "DISABLED");
 }
 
 // Get current state
-bool getElectromagnetEnabled() {
-  return emagEnabled;
-}
+bool getElectromagnetEnabled() { return emagEnabled; }
 
 // Returns microseconds until the start of the next emag frame
 uint32_t getTimeToNextFrameUs() {
   const int64_t frameLenUs = (int64_t)EMAG_FRAME_LEN_MS * 1000LL;
   int64_t timeToNext = nextFrameStartUs - esp_timer_get_time();
-  if (timeToNext <= 0) timeToNext += frameLenUs;
+  if (timeToNext <= 0)
+    timeToNext += frameLenUs;
   return (uint32_t)timeToNext;
 }
 
 // Wait until an absolute esp_timer_get_time() target (µs).
 // Uses vTaskDelay to yield when more than 2ms remain, then busy-waits the tail.
-// Returns false if vTaskDelay ran long and targetUs was already passed on wakeup.
+// Returns false if vTaskDelay ran long and targetUs was already passed on
+// wakeup.
 static bool waitUntilUs(int64_t targetUs) {
   int64_t sleepMs = (targetUs - esp_timer_get_time()) / 1000LL - 2;
   if (sleepMs > 0) {
@@ -85,7 +86,8 @@ static bool waitUntilUs(int64_t targetUs) {
       return false;
     }
   }
-  while (esp_timer_get_time() < targetUs) {}
+  while (esp_timer_get_time() < targetUs) {
+  }
   return true;
 }
 
@@ -115,14 +117,14 @@ void electromagnetTask(void *parameter) {
       // Forward ON
       setElectromagnet(i, true, true);
       interFrameTimeUs += fwdOnUs;
-      if(!waitUntilUs(interFrameTimeUs)) {
+      if (!waitUntilUs(interFrameTimeUs)) {
         DEBUG_PRINTLN("WARNING: Timing overrun before reverse ON");
       }
 
       // Reverse ON
       setElectromagnet(i, true, false);
       interFrameTimeUs += revOnUs;
-      if(!waitUntilUs(interFrameTimeUs)) {
+      if (!waitUntilUs(interFrameTimeUs)) {
         DEBUG_PRINTLN("WARNING: Timing overrun before OFF");
       }
 
@@ -134,4 +136,3 @@ void electromagnetTask(void *parameter) {
     setAllElectromagnets(false);
   }
 }
-

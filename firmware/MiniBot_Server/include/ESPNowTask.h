@@ -1,11 +1,11 @@
 #ifndef ESP_NOW_TASK_H
 #define ESP_NOW_TASK_H
 
+#include "ESPNowMessages.h"
 #include <Arduino.h>
 #include <esp_now.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "ESPNowMessages.h"
 
 // Task handle
 extern TaskHandle_t espNowTaskHandle;

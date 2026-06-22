@@ -4,8 +4,8 @@
 #include "messages_ipc.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * Motion queue handle - wrapper around FreeRTOS queue
@@ -46,7 +46,7 @@ uint16_t MotionQueue_GetSize(MotionQueue queue);
  * @param command Pointer to MotionCommand to enqueue
  * @return true on success, false if queue is full
  */
-bool MotionQueue_Enqueue(MotionQueue queue, MotionCommand* command);
+bool MotionQueue_Enqueue(MotionQueue queue, MotionCommand *command);
 
 /**
  * Add a command to the queue from ISR context
@@ -54,7 +54,7 @@ bool MotionQueue_Enqueue(MotionQueue queue, MotionCommand* command);
  * @param command Pointer to MotionCommand to enqueue
  * @return true on success, false if queue is full
  */
-bool MotionQueue_EnqueueFromISR(MotionQueue queue, MotionCommand* command);
+bool MotionQueue_EnqueueFromISR(MotionQueue queue, MotionCommand *command);
 
 /**
  * Remove a command from the queue (blocking with timeout)
@@ -63,7 +63,8 @@ bool MotionQueue_EnqueueFromISR(MotionQueue queue, MotionCommand* command);
  * @param timeout_ms Maximum time to wait in milliseconds (0 for non-blocking)
  * @return true on success, false if queue is empty or timeout
  */
-bool MotionQueue_Dequeue(MotionQueue queue, MotionCommand* command, uint32_t timeout_ms);
+bool MotionQueue_Dequeue(MotionQueue queue, MotionCommand *command,
+                         uint32_t timeout_ms);
 
 /**
  * Destroy queue and free all resources

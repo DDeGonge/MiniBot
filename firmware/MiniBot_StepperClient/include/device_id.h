@@ -5,11 +5,11 @@
 
 /**
  * Device ID Management
- * 
+ *
  * The device ID is stored in NVS (Non-Volatile Storage) and persists
  * across firmware flashes. This allows the same firmware to be deployed
  * to multiple robots while each maintains its unique ID.
- * 
+ *
  * Usage:
  * 1. Flash firmware to robot
  * 2. Temporarily call setDeviceID(id) in setup() with unique ID (0x01-0xFE)
