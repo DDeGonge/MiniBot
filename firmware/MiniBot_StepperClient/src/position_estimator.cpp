@@ -527,6 +527,17 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   uint32_t reads_attempted = 0;
   uint32_t reads_stale = 0;
 
+  // DEBUG LOOP
+  // while (1) {
+  //   mag.readMeasurement();
+  //   float mx = mag.getFieldGaussX();
+  //   float my = -mag.getFieldGaussY();
+  //   float mz = -mag.getFieldGaussZ();
+  //   ESP_LOGI(TAG, "Raw mag: X=%.3f Y=%.3f Z=%.3f", mx, my, mz);
+  //   mag.setReset();
+  //   vTaskDelay(pdMS_TO_TICKS(20));
+  // }
+
   while (1) {
     // ---- Block until timer notification (MEASURING) or timeout (IDLE) ----
     if (current_state == STATE_MEASURING) {

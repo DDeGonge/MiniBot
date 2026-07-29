@@ -85,12 +85,10 @@
 // Motion Control Limits
 // ============================================================================
 
-#define ROBOT_MAX_VELOCITY_MM_S                                                \
-  250.0f // Maximum linear velocity (mm/s) NOT REALLY USED
-#define ROBOT_MAX_ACCEL_MM_S2 500.0f // Maximum linear acceleration (mm/s²)
-#define MAX_ROT_VEL_RAD_S 5.0f       // Maximum angular velocity (rad/s)
-#define MAX_ROT_ACCEL_RAD_S2 20.0f   // Maximum angular acceleration (rad/s²)
-#define STEPPER_MAX_VELOCITY_MM_S 250.0f // Stepper motor maximum velocity
+#define ROBOT_MAX_VELOCITY_MM_S 250.0f // Maximum linear velocity (mm/s)
+#define ROBOT_MAX_ACCEL_MM_S2 500.0f   // Maximum linear acceleration (mm/s²)
+#define MAX_ROT_VEL_RAD_S 5.0f         // Maximum angular velocity (rad/s)
+#define MAX_ROT_ACCEL_RAD_S2 20.0f     // Maximum angular acceleration (rad/s²)
 
 // Motor test command configuration
 #define MOTOR_TEST_TIMEOUT_MS 1000 // Timeout for motor test commands (ms)
@@ -125,7 +123,37 @@
 
 // Electromagnet positions (x, y) in mm relative to the platform origin
 // Add one entry per electromagnet; array length must match EMAG_COUNT
-#define EMAG_POSITIONS_MM {{250.0f, 156.7f}, {150.0f, 156.7f}, {200.0f, 243.3f}}
+// TODO eventually these should be stored on the base station and sent
+// to each robot over ESP-NOW
+
+#define EMAG_POSITIONS_MM {                                                    \
+  {40.0f, 138.79f},   /* EMAG 1 */                                             \
+  {84.0f, 215.0f},    /* EMAG 2 */                                             \
+  {40.0f, 291.21f},   /* EMAG 3 */                                             \
+}
+
+// #define EMAG_POSITIONS_MM {                                                    \
+//   {84.0f, 62.58f},    /* EMAG 0 */                                             \
+//   {40.0f, 138.79f},   /* EMAG 1 */                                             \
+//   {84.0f, 215.0f},    /* EMAG 2 */                                             \
+//   {40.0f, 291.21f},   /* EMAG 3 */                                             \
+//   {84.0f, 367.42f},   /* EMAG 4 */                                             \
+//   {172.0f, 62.58f},   /* EMAG 5 */                                             \
+//   {216.0f, 138.79f},  /* EMAG 6 */                                             \
+//   {172.0f, 215.0f},   /* EMAG 7 */                                             \
+//   {216.0f, 291.21f},  /* EMAG 8 */                                             \
+//   {172.0f, 367.42f},  /* EMAG 9 */                                             \
+//   {348.0f, 62.58f},   /* EMAG 10 */                                            \
+//   {303.0f, 138.79f},  /* EMAG 11 */                                            \
+//   {348.0f, 215.0f},   /* EMAG 12 */                                            \
+//   {314.0f, 291.21f},  /* EMAG 13 */                                            \
+//   {348.0f, 367.42f},  /* EMAG 14 */                                            \
+//   {436.0f, 62.58f},   /* EMAG 15 */                                            \
+//   {480.0f, 138.79f},  /* EMAG 16 */                                            \
+//   {436.0f, 215.0f},   /* EMAG 17 */                                            \
+//   {480.0f, 291.21f},  /* EMAG 18 */                                            \
+//   {436.0f, 367.42f},  /* EMAG 19 */                                            \
+// }
 
 // Electromagnet frame timing setup
 #define EMAG_FRAME_LEN_MS 100 // Total frame length
