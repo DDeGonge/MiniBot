@@ -35,7 +35,6 @@ bool Robot::initialize() {
   robot_max_accel_mm_s2 = ROBOT_MAX_ACCEL_MM_S2;
   max_rot_vel_rad_s = MAX_ROT_VEL_RAD_S;
   max_rot_accel_rad_s2 = MAX_ROT_ACCEL_RAD_S2;
-  stepper_max_velocity_mm_s = STEPPER_MAX_VELOCITY_MM_S;
 
   positionX = 0.0f;
   positionY = 0.0f;
@@ -635,7 +634,7 @@ void Robot::executeRotation(float angle_rad, float target_time_s) {
   float steps_per_mm = steps_per_revolution / (2.0f * M_PI * wheel_radius_mm);
 
   WheelMotion profile =
-      calculateWheelProfile(wheel_arc, target_time_s, stepper_max_velocity_mm_s,
+      calculateWheelProfile(wheel_arc, target_time_s, robot_max_velocity_mm_s,
                             robot_max_accel_mm_s2, steps_per_mm);
 
   if (profile.total_steps == 0)
@@ -667,7 +666,7 @@ void Robot::executeStraightLine(float distance_mm, float target_time_s) {
   float steps_per_mm = steps_per_revolution / (2.0f * M_PI * wheel_radius_mm);
 
   WheelMotion profile = calculateWheelProfile(
-      fabs(distance_mm), target_time_s, stepper_max_velocity_mm_s,
+      fabs(distance_mm), target_time_s, robot_max_velocity_mm_s,
       robot_max_accel_mm_s2, steps_per_mm);
 
   if (profile.total_steps == 0)
@@ -795,10 +794,10 @@ void Robot::executeArcToPosition(float dx, float dy, float current_theta,
 
   // Calculate profiles for each wheel
   WheelMotion left_profile = calculateWheelProfile(
-      left_distance, arc_time_s, stepper_max_velocity_mm_s,
+      left_distance, arc_time_s, robot_max_velocity_mm_s,
       robot_max_accel_mm_s2, steps_per_mm);
   WheelMotion right_profile = calculateWheelProfile(
-      right_distance, arc_time_s, stepper_max_velocity_mm_s,
+      right_distance, arc_time_s, robot_max_velocity_mm_s,
       robot_max_accel_mm_s2, steps_per_mm);
 
   // Use the longer wheel's time as reference
@@ -807,10 +806,10 @@ void Robot::executeArcToPosition(float dx, float dy, float current_theta,
 
   // Recalculate profiles with synchronized time
   left_profile = calculateWheelProfile(left_distance, motion_time_s,
-                                       stepper_max_velocity_mm_s,
+                                       robot_max_velocity_mm_s,
                                        robot_max_accel_mm_s2, steps_per_mm);
   right_profile = calculateWheelProfile(right_distance, motion_time_s,
-                                        stepper_max_velocity_mm_s,
+                                        robot_max_velocity_mm_s,
                                         robot_max_accel_mm_s2, steps_per_mm);
 
   // Set wheel directions

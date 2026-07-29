@@ -77,7 +77,7 @@ private:
   float robot_max_accel_mm_s2;
   float max_rot_vel_rad_s;
   float max_rot_accel_rad_s2;
-  float stepper_max_velocity_mm_s;
+
 
 public:
   StepperDriver left_wheel;
@@ -218,7 +218,6 @@ public:
   float getRobotMaxAccel() const { return robot_max_accel_mm_s2; }
   float getMaxRotVel() const { return max_rot_vel_rad_s; }
   float getMaxRotAccel() const { return max_rot_accel_rad_s2; }
-  float getStepperMaxVelocity() const { return stepper_max_velocity_mm_s; }
 
   // Motion control configuration setters
   void setStepsPerRevolution(float steps) { steps_per_revolution = steps; }
@@ -226,7 +225,6 @@ public:
   void setRobotMaxAccel(float accel) { robot_max_accel_mm_s2 = accel; }
   void setMaxRotVel(float vel) { max_rot_vel_rad_s = vel; }
   void setMaxRotAccel(float accel) { max_rot_accel_rad_s2 = accel; }
-  void setStepperMaxVelocity(float vel) { stepper_max_velocity_mm_s = vel; }
 
 private:
   // Legacy motion profile (still used by executeMotionLoop)
