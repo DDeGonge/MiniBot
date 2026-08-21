@@ -478,10 +478,7 @@ void EspNowCommunicator_Task(void *pvParameters) {
     bool sync_is_fresh = (last_sync_received_us != 0) &&
                          ((esp_timer_get_time() - last_sync_received_us) <
                           (int64_t)SYNC_DUTY_CYCLE_TIMEOUT_MS * 1000LL);
-    
-    
-    // This still needs testing, so for now keep duty cycling disabled
-    sync_is_fresh = false;
+
     set_duty_cycle(sync_is_fresh);
 
 #if SPAM_POSITION

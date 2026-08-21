@@ -4,6 +4,7 @@
 #define LOG_LOCAL_LEVEL LOG_LEVEL_BATTERY
 #include "config.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "led_status.h"
 
 static const char *TAG = "BATTERY";
@@ -11,10 +12,31 @@ static const char *TAG = "BATTERY";
 static uint8_t battery_adc_pin = 0;
 static RollingAverage<BATTERY_AVG_WINDOW_SIZE> battery_avg_v;
 static bool low_battery_alerted = false;
+static esp_timer_handle_t charge_timeout_timer = NULL;
+
+static void charge_timeout_callback(void *arg) {
+  ESP_LOGI(TAG, "Charge timeout reached after %d s; LED set to steady on",
+           CHARGE_TIMER_S);
+  LedStatus_SetStatus(LED_STATUS_CHARGED);
+}
 
 bool BatteryMonitor_Init(uint8_t adc_pin) {
   battery_adc_pin = adc_pin;
   pinMode(battery_adc_pin, INPUT);
+
+  if (charge_timeout_timer == NULL) {
+    esp_timer_create_args_t timer_args = {
+        .callback = charge_timeout_callback,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "charge_timeout",
+    };
+    if (esp_timer_create(&timer_args, &charge_timeout_timer) != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to create charge timeout timer");
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -60,9 +82,8 @@ void BatteryMonitor_Task(void *pvParameters) {
     }
 
     // Determine whether other tasks should be suspended
-    bool should_suspend =
-        robot->getBatteryCritical() ||
-        (!ENABLE_BOT_WHILE_CHARGING && robot->getBatteryCharging());
+    bool is_charging = (!ENABLE_BOT_WHILE_CHARGING && robot->getBatteryCharging());
+    bool should_suspend = robot->getBatteryCritical() || is_charging;
 
     if (should_suspend && !tasks_suspended) {
       ESP_LOGW(TAG, "Battery condition (%.2fV) requires suspending tasks.",
@@ -77,9 +98,20 @@ void BatteryMonitor_Task(void *pvParameters) {
       if (params->position_estimator_calc_task != NULL)
         vTaskSuspend(params->position_estimator_calc_task);
       tasks_suspended = true;
+      if (is_charging) {
+        LedStatus_SetStatus(LED_STATUS_BREATHING);
+        if (esp_timer_is_active(charge_timeout_timer)) {
+          esp_timer_stop(charge_timeout_timer);
+        }
+        esp_timer_start_once(charge_timeout_timer,
+                             (uint64_t)CHARGE_TIMER_S * 1000000ULL);
+      }
     } else if (!should_suspend && tasks_suspended) {
       ESP_LOGI(TAG, "Battery voltage (%.2fV) recovered. Resuming tasks.",
                current_voltage);
+      if (esp_timer_is_active(charge_timeout_timer)) {
+        esp_timer_stop(charge_timeout_timer);
+      }
       if (params->kinematics_task != NULL)
         vTaskResume(params->kinematics_task);
       if (params->communicator_task != NULL)

@@ -3,6 +3,7 @@
 static uint8_t led_pin = 0;
 static LedStatus current_led_status = LED_STATUS_STARTUP;
 static uint8_t led_brightness = 127;
+static bool led_initialized = false;
 
 #define LED_MIN_BRIGHTNESS 4
 
@@ -10,6 +11,7 @@ bool LedStatus_Init(uint8_t pin) {
   led_pin = pin;
   pinMode(led_pin, OUTPUT);
   analogWrite(led_pin, 0);
+  led_initialized = true;
   return true;
 }
 
@@ -62,9 +64,8 @@ static void breathing_fast(uint8_t pin) {
 void LedStatus_Task(void *pvParameters) {
   Robot *robot = (Robot *)pvParameters;
 
-  if (led_pin == 0) {
-    vTaskDelete(NULL);
-    return;
+  while (!led_initialized) {
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 
   while (1) {
@@ -81,8 +82,7 @@ void LedStatus_Task(void *pvParameters) {
 
     case LED_STATUS_MOVING:
       led_brightness = 127;
-      blink_pattern(1, 100, 400);
-      vTaskDelay(pdMS_TO_TICKS(200));
+      breathing(led_pin);
       break;
 
     case LED_STATUS_ERROR:
@@ -104,6 +104,12 @@ void LedStatus_Task(void *pvParameters) {
     case LED_STATUS_BREATHING_FAST:
       led_brightness = 127;
       breathing_fast(led_pin);
+      break;
+
+    case LED_STATUS_CHARGED:
+      led_brightness = 255;
+      analogWrite(led_pin, led_brightness);
+      vTaskDelay(pdMS_TO_TICKS(100));
       break;
 
     default:
