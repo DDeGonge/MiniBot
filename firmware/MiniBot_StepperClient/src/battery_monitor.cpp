@@ -82,7 +82,8 @@ void BatteryMonitor_Task(void *pvParameters) {
     }
 
     // Determine whether other tasks should be suspended
-    bool is_charging = (!ENABLE_BOT_WHILE_CHARGING && robot->getBatteryCharging());
+    bool is_charging =
+        (!ENABLE_BOT_WHILE_CHARGING && robot->getBatteryCharging());
     bool should_suspend = robot->getBatteryCritical() || is_charging;
 
     if (should_suspend && !tasks_suspended) {

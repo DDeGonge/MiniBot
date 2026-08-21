@@ -616,9 +616,10 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         reads_stale = 0;
 
         char buf[256];
-        size_t n = sizeof(read_err) / sizeof(read_err[0]); // if it's a real array, not a pointer
+        size_t n = sizeof(read_err) /
+                   sizeof(read_err[0]); // if it's a real array, not a pointer
         for (size_t i = 0; i < n && len < (int)sizeof(buf); i++) {
-            len += snprintf(buf + len, sizeof(buf) - len, "%d ", read_err[i]);
+          len += snprintf(buf + len, sizeof(buf) - len, "%d ", read_err[i]);
         }
 
         ESP_LOGI(TAG, "read_err: %s", buf);

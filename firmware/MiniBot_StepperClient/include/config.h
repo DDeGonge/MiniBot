@@ -115,7 +115,8 @@
 // EXPERIMENTAL power saving config through duty cycling radio
 #define ESPNOW_WAKE_WINDOW_MS 4    // Radio-on time per duty cycle
 #define ESPNOW_WAKE_INTERVAL_MS 40 // Duty cycle period
-#define SYNC_DUTY_CYCLE_TIMEOUT_MS 30000 // Disable duty cycling if sync becomes stale
+#define SYNC_DUTY_CYCLE_TIMEOUT_MS                                             \
+  30000 // Disable duty cycling if sync becomes stale
 
 // ============================================================================
 // Electromagnet Positioning System Configuration
@@ -126,11 +127,12 @@
 // TODO eventually these should be stored on the base station and sent
 // to each robot over ESP-NOW
 
-#define EMAG_POSITIONS_MM {                                                    \
-  {40.0f, 138.79f},   /* EMAG 1 */                                             \
-  {84.0f, 215.0f},    /* EMAG 2 */                                             \
-  {40.0f, 291.21f},   /* EMAG 3 */                                             \
-}
+#define EMAG_POSITIONS_MM                                                      \
+  {                                                                            \
+      {40.0f, 138.79f}, /* EMAG 1 */                                           \
+      {84.0f, 215.0f},  /* EMAG 2 */                                           \
+      {40.0f, 291.21f}, /* EMAG 3 */                                           \
+  }
 
 // #define EMAG_POSITIONS_MM {                                                    \
 //   {84.0f, 62.58f},    /* EMAG 0 */                                             \
@@ -160,7 +162,8 @@
 #define EMAG_COUNT 3          // Number of electromagnets in platform
 #define EMAG_FWD_ON_TIME_MS 7 // How long forward power is applied
 #define EMAG_REV_ON_TIME_MS 7 // How long reverse power is applied
-#define EMAG_TRIM_MS 1.1 // Samples closer than this to state changes are ignored
+#define EMAG_TRIM_MS                                                           \
+  1.1 // Samples closer than this to state changes are ignored
 static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
                   EMAG_FRAME_LEN_MS,
               "EMAG slot time * EMAG_COUNT exceeds EMAG_FRAME_LEN_MS");

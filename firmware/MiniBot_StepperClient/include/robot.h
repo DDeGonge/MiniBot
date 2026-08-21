@@ -78,7 +78,6 @@ private:
   float max_rot_vel_rad_s;
   float max_rot_accel_rad_s2;
 
-
 public:
   StepperDriver left_wheel;
   StepperDriver right_wheel;

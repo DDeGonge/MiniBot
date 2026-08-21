@@ -221,7 +221,7 @@ void setup() {
   } else {
     ESP_LOGI(TAG, "Device ID: 0x%02X", device_id);
     LedStatus_SetStatus(LED_STATUS_READY);
-  }  
+  }
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }
