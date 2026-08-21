@@ -299,7 +299,8 @@ static void esp_now_message_handler(const uint8_t *mac_addr,
     MotTestCommand *test_cmd = (MotTestCommand *)data;
 
     if (test_cmd->enabled) {
-      // Convert int8_t command to rad/s (scale from -128..127 using max velocity)
+      // Convert int8_t command to rad/s (scale from -128..127 using max
+      // velocity)
       float m0_vel_rad_s =
           (((float)test_cmd->m0_vel / 128.0f) * ROBOT_MAX_VELOCITY_MM_S) /
           WHEEL_RADIUS_MM;
@@ -478,10 +479,7 @@ void EspNowCommunicator_Task(void *pvParameters) {
     bool sync_is_fresh = (last_sync_received_us != 0) &&
                          ((esp_timer_get_time() - last_sync_received_us) <
                           (int64_t)SYNC_DUTY_CYCLE_TIMEOUT_MS * 1000LL);
-    
-    
-    // This still needs testing, so for now keep duty cycling disabled
-    sync_is_fresh = false;
+
     set_duty_cycle(sync_is_fresh);
 
 #if SPAM_POSITION

@@ -793,12 +793,12 @@ void Robot::executeArcToPosition(float dx, float dy, float current_theta,
   float steps_per_mm = steps_per_revolution / (2.0f * M_PI * wheel_radius_mm);
 
   // Calculate profiles for each wheel
-  WheelMotion left_profile = calculateWheelProfile(
-      left_distance, arc_time_s, robot_max_velocity_mm_s,
-      robot_max_accel_mm_s2, steps_per_mm);
-  WheelMotion right_profile = calculateWheelProfile(
-      right_distance, arc_time_s, robot_max_velocity_mm_s,
-      robot_max_accel_mm_s2, steps_per_mm);
+  WheelMotion left_profile =
+      calculateWheelProfile(left_distance, arc_time_s, robot_max_velocity_mm_s,
+                            robot_max_accel_mm_s2, steps_per_mm);
+  WheelMotion right_profile =
+      calculateWheelProfile(right_distance, arc_time_s, robot_max_velocity_mm_s,
+                            robot_max_accel_mm_s2, steps_per_mm);
 
   // Use the longer wheel's time as reference
   float motion_time_s =

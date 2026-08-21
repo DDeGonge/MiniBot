@@ -182,20 +182,7 @@ void setup() {
   esp_log_level_set("ROBOT", (esp_log_level_t)LOG_LEVEL_ROBOT);
   ESP_LOGI(TAG, "\n\n=== MiniBot Stepper Client ===");
 
-  // Write device ID to NVS, ony do this one time. Persistant across reflashes.
-  // TODO create a function to set ID based on current position on chess board
-  // setDeviceID(0x04);
-
-  uint8_t device_id = getDeviceID();
-  if (device_id == 0xFF) {
-    ESP_LOGW(TAG, "Device ID not configured!");
-    ESP_LOGW(TAG, "Set ID by calling: setDeviceID(id) where id is 0x01-0xFE");
-  } else {
-    ESP_LOGI(TAG, "Device ID: 0x%02X", device_id);
-  }
-
   ESP_LOGI(TAG, "Initializing FreeRTOS framework...");
-
   if (!initialize_modules()) {
     LedStatus_SetStatus(LED_STATUS_ERROR);
     while (1) {
@@ -222,7 +209,19 @@ void setup() {
 
   setCpuFrequencyMhz(80);
 
-  LedStatus_SetStatus(LED_STATUS_READY);
+  // Write device ID to NVS, ony do this one time. Persistant across reflashes.
+  // TODO create a function to set ID based on current position on chess board
+  // setDeviceID(0x07);
+
+  uint8_t device_id = getDeviceID();
+  if (device_id == 0xFF) {
+    ESP_LOGW(TAG, "Device ID not configured!");
+    ESP_LOGW(TAG, "Set ID by calling: setDeviceID(id) where id is 0x01-0xFE");
+    LedStatus_SetStatus(LED_STATUS_BREATHING_FAST);
+  } else {
+    ESP_LOGI(TAG, "Device ID: 0x%02X", device_id);
+    LedStatus_SetStatus(LED_STATUS_READY);
+  }
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }

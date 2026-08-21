@@ -526,6 +526,8 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   // Performance counters — logged per frame
   uint32_t reads_attempted = 0;
   uint32_t reads_stale = 0;
+  int len = 50;
+  uint16_t read_err[len] = {0};
 
   // DEBUG LOOP
   // while (1) {
@@ -565,15 +567,15 @@ void PositionEstimator_SensorTask(void *pvParameters) {
       if (!mag.readMeasurement()) {
         // Busy-wait up to 3 × 50 µs for data to become ready
         bool ready = false;
-        for (int retry = 0; retry < 3; retry++) {
+        for (int retry = 0; retry < 2; retry++) {
           esp_rom_delay_us(50);
-          reads_stale++;
           if (mag.readMeasurement()) {
             ready = true;
             break;
           }
         }
         if (!ready) {
+          reads_stale++;
           ESP_LOGD(TAG,
                    "Stale read unresolved after retries (total stale: %lu)",
                    reads_stale);
@@ -597,6 +599,7 @@ void PositionEstimator_SensorTask(void *pvParameters) {
 
       int64_t frame_elapsed_us = current_micros - frame_start_time_us;
       uint8_t emag_index = (uint8_t)(frame_elapsed_us / slot_us);
+      read_err[reads_attempted - 1] = (frame_elapsed_us % 1000);
 
       // Serial.printf("%ld us  \tmx: %.3f\tmy: %.3f\tmz: %.3f\n",
       // frame_elapsed_us, mx, my, mz);
@@ -611,6 +614,15 @@ void PositionEstimator_SensorTask(void *pvParameters) {
                  reads_attempted, reads_stale, miss_pct);
         reads_attempted = 0;
         reads_stale = 0;
+
+        char buf[256];
+        size_t n = sizeof(read_err) /
+                   sizeof(read_err[0]); // if it's a real array, not a pointer
+        for (size_t i = 0; i < n && len < (int)sizeof(buf); i++) {
+          len += snprintf(buf + len, sizeof(buf) - len, "%d ", read_err[i]);
+        }
+
+        ESP_LOGI(TAG, "read_err: %s", buf);
 
         current_frame.bg_x = avgX.avg();
         current_frame.bg_y = avgY.avg();

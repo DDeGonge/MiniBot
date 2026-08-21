@@ -17,8 +17,9 @@
 #define LOG_LEVEL_MMC5633 3
 #define LOG_LEVEL_ROBOT 3
 
-#define SPAM_POSITION true
+#define SPAM_POSITION false
 #define ENABLE_BOT_WHILE_CHARGING true
+#define CHARGE_TIMER_S 7200
 
 // ============================================================================
 // GPIO Pin Definitions
@@ -45,7 +46,7 @@
 #define BATTERY_CRITICAL_VOLTAGE 3.2f
 #define BATTERY_CHARGING_VOLTAGE 4.6f
 #define BATTERY_POLL_INTERVAL_MS 500
-#define BATTERY_AVG_WINDOW_SIZE 20
+#define BATTERY_AVG_WINDOW_SIZE 10
 
 // ============================================================================
 // Robot Physical Configuration
@@ -66,7 +67,7 @@
 #define MSET_STEP_LVL true
 #define MSET_DIR_LVL true
 
-// Motor reversal (set to true to reverse motor direction)
+// Motor reversal
 #define L_WHEEL_REVERSE false
 #define R_WHEEL_REVERSE true
 
@@ -91,7 +92,7 @@
 #define MAX_ROT_ACCEL_RAD_S2 20.0f     // Maximum angular acceleration (rad/s²)
 
 // Motor test command configuration
-#define MOTOR_TEST_TIMEOUT_MS 1000 // Timeout for motor test commands (ms)
+#define MOTOR_TEST_TIMEOUT_MS 1000 // Timeout for motor test commands
 
 #define POSITION_TOLERANCE_MM 2.0f // Position error tolerance
 #define ANGLE_TOLERANCE_RAD 0.05f  // ~3 degrees angle tolerance
@@ -112,10 +113,10 @@
 #define WIFI_POWER WIFI_POWER_8_5dBm
 
 // EXPERIMENTAL power saving config through duty cycling radio
-#define ESPNOW_WAKE_WINDOW_MS 4    // Radio-on time per duty cycle (ms)
-#define ESPNOW_WAKE_INTERVAL_MS 20 // Duty cycle period (ms)
+#define ESPNOW_WAKE_WINDOW_MS 4    // Radio-on time per duty cycle
+#define ESPNOW_WAKE_INTERVAL_MS 40 // Duty cycle period
 #define SYNC_DUTY_CYCLE_TIMEOUT_MS                                             \
-  30000 // Disable duty cycle if sync older than this (ms)
+  30000 // Disable duty cycling if sync becomes stale
 
 // ============================================================================
 // Electromagnet Positioning System Configuration
@@ -126,11 +127,12 @@
 // TODO eventually these should be stored on the base station and sent
 // to each robot over ESP-NOW
 
-#define EMAG_POSITIONS_MM {                                                    \
-  {40.0f, 138.79f},   /* EMAG 1 */                                             \
-  {84.0f, 215.0f},    /* EMAG 2 */                                             \
-  {40.0f, 291.21f},   /* EMAG 3 */                                             \
-}
+#define EMAG_POSITIONS_MM                                                      \
+  {                                                                            \
+      {40.0f, 138.79f}, /* EMAG 1 */                                           \
+      {84.0f, 215.0f},  /* EMAG 2 */                                           \
+      {40.0f, 291.21f}, /* EMAG 3 */                                           \
+  }
 
 // #define EMAG_POSITIONS_MM {                                                    \
 //   {84.0f, 62.58f},    /* EMAG 0 */                                             \
@@ -156,12 +158,12 @@
 // }
 
 // Electromagnet frame timing setup
-#define EMAG_FRAME_LEN_MS 100 // Total frame length
+#define EMAG_FRAME_LEN_MS 200 // Total frame length
 #define EMAG_COUNT 3          // Number of electromagnets in platform
 #define EMAG_FWD_ON_TIME_MS 7 // How long forward power is applied
 #define EMAG_REV_ON_TIME_MS 7 // How long reverse power is applied
 #define EMAG_TRIM_MS                                                           \
-  1.5 // Samples closer than this to state changes are ignored
+  1.1 // Samples closer than this to state changes are ignored
 static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
                   EMAG_FRAME_LEN_MS,
               "EMAG slot time * EMAG_COUNT exceeds EMAG_FRAME_LEN_MS");
@@ -184,12 +186,11 @@ static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
 // Position estimation parameters
 #define TRUE_POSE_LPF_CUTOFF_HZ 1.0f
 #define TRUE_POSE_LPF_REF_CONFIDENCE                                           \
-  2.0f // Reference confidence for full LPF response; lower values → faster
-       // tracking
+  2.0f // Ref confidence for full LPF response; lower=faster tracking
 #define TRUE_POSE_STALE_TIMEOUT_MS                                             \
-  1000 // Max age of true pose before it is considered stale
+  1000 // Max age of true pose before considered stale
 #define EMAG_MIN_SIGNAL_GAUSS                                                  \
-  0.5f // Minimum fwd-rev differential magnitude to consider an emag reading
+  0.5f // Minimum fwd-rev differential magnitude to consider reading
        // valid
 #define EMAG_MAX_ANGLE_DELTA_RAD                                               \
   0.6f // Maximum allowed difference between forward and reverse azimuth angles
