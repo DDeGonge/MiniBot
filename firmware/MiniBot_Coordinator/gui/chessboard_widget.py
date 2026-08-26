@@ -2,9 +2,9 @@
 gui/chessboard_widget.py  —  MiniBot Chess Swarm Coordinator
 
 Custom QWidget that renders the physical chessboard environment:
-  - 125mm left/right borders, 25mm top/bottom borders (all drawn to scale)
+  - Border margins around the play area (sizes from config.BOARD)
   - Hard outer outline rectangle
-  - 8×8 checkerboard (50mm squares)
+  - 8×8 checkerboard (square size = config.BOARD.SQUARE_SIZE_MM, 57.15 mm)
   - 34 robot pieces as labeled circles with orientation markers
   - Selected-piece highlight and target-position indicator
 
@@ -46,9 +46,9 @@ from planning.base_planner import MoveCommand
 class ChessBoardWidget(QWidget):
     """Scaled chessboard canvas widget.
 
-    The logical coordinate space is (0,0) bottom-left of the playing area,
-    650 mm wide × 450 mm tall.  The canvas scales to fill the widget size
-    while preserving the aspect ratio.
+    The logical coordinate space is (0,0) bottom-left of the playing area; the
+    canvas spans the playing area plus its border margins (all from config.BOARD)
+    and scales to fill the widget size while preserving the aspect ratio.
     """
 
     piece_selected = pyqtSignal(int)  # piece_id
@@ -58,14 +58,15 @@ class ChessBoardWidget(QWidget):
     target_queued = pyqtSignal(
         int, float, float
     )  # piece_id, x_mm, y_mm  (right-click → immediate dispatch)
+    square_clicked = pyqtSignal(int, int)  # file(0-7), rank(0-7); only in chess mode
 
     # ------------------------------------------------------------------
     # Logical canvas constants (mm)
     # ------------------------------------------------------------------
-    _LW = BOARD.CANVAS_WIDTH_MM  # 650
-    _LH = BOARD.CANVAS_HEIGHT_MM  # 450
-    _OX = BOARD.BORDER_LEFT_MM  # 125  offset of playing area origin
-    _OY = BOARD.BORDER_BOTTOM_MM  # 25
+    _LW = BOARD.CANVAS_WIDTH_MM  # full canvas width (playing area + L/R borders)
+    _LH = BOARD.CANVAS_HEIGHT_MM  # full canvas height (playing area + T/B borders)
+    _OX = BOARD.BORDER_LEFT_MM  # x offset of playing-area origin within the canvas
+    _OY = BOARD.BORDER_BOTTOM_MM  # y offset of playing-area origin within the canvas
 
     def __init__(
         self, board_state: BoardState, parent: Optional[QWidget] = None
@@ -79,6 +80,10 @@ class ChessBoardWidget(QWidget):
         self._show_electromagnets: bool = False
         # Plan visualization: list of (x0, y0, x1, y1, wave_idx, total_waves)
         self._plan_arrows: List[Tuple[float, float, float, float, int, int]] = []
+        # Chess mode: route clicks as board squares and highlight legal moves.
+        self._chess_mode: bool = False
+        self._legal_squares: Set[Tuple[int, int]] = set()  # (file, rank) dots
+        self._sel_square: Optional[Tuple[int, int]] = None  # (file, rank) ring
 
         self.setMinimumSize(
             int(BOARD.CANVAS_WIDTH_MM * GUI.SCALE_FACTOR),
@@ -162,6 +167,32 @@ class ChessBoardWidget(QWidget):
         self._target = (x_mm, y_mm)
         self.update()
 
+    def set_chess_mode(self, on: bool) -> None:
+        """Route board clicks as chess squares (Play Chess tab) when on."""
+        self._chess_mode = on
+        self._selected_id = None
+        self._target = None
+        if not on:
+            self._legal_squares = set()
+            self._sel_square = None
+        self.update()
+
+    def set_legal_highlights(
+        self,
+        squares: Set[Tuple[int, int]],
+        selected: Optional[Tuple[int, int]] = None,
+    ) -> None:
+        """Highlight legal destination squares (dots) and the selected one (ring)."""
+        self._legal_squares = set(squares)
+        self._sel_square = selected
+        self.update()
+
+    def clear_legal_highlights(self) -> None:
+        """Clear all chess move highlights."""
+        self._legal_squares = set()
+        self._sel_square = None
+        self.update()
+
     # ------------------------------------------------------------------
     # Mouse interaction
     # ------------------------------------------------------------------
@@ -169,6 +200,15 @@ class ChessBoardWidget(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.setFocus()
         board_x, board_y = self._widget_to_mm(event.position())
+
+        # ── Chess mode: emit the clicked board square, bypass planning clicks ──
+        if self._chess_mode:
+            if event.button() == Qt.MouseButton.LeftButton:
+                sq = self._square_at_mm(board_x, board_y)
+                if sq is not None:
+                    self.square_clicked.emit(sq[0], sq[1])
+            return
+
         clicked_pid = self._piece_at(board_x, board_y)
         btn = event.button()
 
@@ -258,6 +298,7 @@ class ChessBoardWidget(QWidget):
         self._draw_background(painter)
         self._draw_outer_outline(painter)
         self._draw_grid(painter)
+        self._draw_chess_highlights(painter)
         self._draw_plan_paths(painter)
         self._draw_electromagnets(painter)
         self._draw_target_indicator(painter)
@@ -323,6 +364,27 @@ class ChessBoardWidget(QWidget):
         for row in range(n + 1):
             _, cy = self._pa_to_canvas(0, float(row * s))
             p.drawLine(QPointF(cx0, cy), QPointF(cx1, cy))
+
+    def _draw_chess_highlights(self, p: QPainter) -> None:
+        """Draw legal-move dots and a ring on the selected square (chess mode)."""
+        if not self._chess_mode:
+            return
+        s = BOARD.SQUARE_SIZE_MM
+        if self._sel_square is not None:
+            f, r = self._sel_square
+            cx, cy = self._pa_to_canvas((f + 0.5) * s, (r + 0.5) * s)
+            pen = QPen(QColor(GUI.SELECTED_HIGHLIGHT_COLOR))
+            pen.setWidthF(2.5)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            half = s / 2.0 - 2.0
+            p.drawRect(QRectF(cx - half, cy - half, 2 * half, 2 * half))
+        dot_r = s * 0.16
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(0, 200, 90, 150)))
+        for f, r in self._legal_squares:
+            cx, cy = self._pa_to_canvas((f + 0.5) * s, (r + 0.5) * s)
+            p.drawEllipse(QPointF(cx, cy), dot_r, dot_r)
 
     def _draw_plan_paths(self, p: QPainter) -> None:
         """Draw colored wave arrows for planned moves."""
@@ -537,6 +599,17 @@ class ChessBoardWidget(QWidget):
                 closest_id = piece.piece_id
 
         return closest_id
+
+    def _square_at_mm(self, x_mm: float, y_mm: float) -> Optional[Tuple[int, int]]:
+        """Playing-area mm → (file, rank) on the 8x8 board, or None if off-board."""
+        s = BOARD.SQUARE_SIZE_MM
+        if x_mm < 0 or y_mm < 0:
+            return None
+        f = int(x_mm // s)
+        r = int(y_mm // s)
+        if 0 <= f < BOARD.NUM_SQUARES and 0 <= r < BOARD.NUM_SQUARES:
+            return (f, r)
+        return None
 
     # ------------------------------------------------------------------
     # Initialise scale fields so _widget_to_mm works before first paint
