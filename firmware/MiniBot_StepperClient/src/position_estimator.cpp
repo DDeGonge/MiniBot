@@ -19,8 +19,12 @@ static bool mag_initialized = false;
 
 static EmagFrameData current_frame;
 static PositionEstState current_state = STATE_IDLE;
+// sync_pulse_time_us anchors an absolute grid of EMAG_FRAME_LEN_MS-spaced
+// boundaries. next_frame_time_us is the upcoming boundary the IDLE loop is
+// waiting for; frame_start_time_us latches that same value once the frame's
+// first-shot timer is armed, and becomes the t=0 reference for sample
+// timestamps during MEASURING.
 static int64_t frame_start_time_us = 0;
-static bool frame_shift_pending = false;
 
 static QueueHandle_t emag_frame_queue = NULL;
 
@@ -30,10 +34,12 @@ static bool synced = false;
 
 static TaskHandle_t s_sensor_task_handle = NULL;
 static esp_timer_handle_t s_sample_timer = NULL;
-static bool s_waiting_first_aligned_shot = false;
-static bool s_periodic_running = false;
 
-
+static uint32_t s_consec_stale = 0;
+static bool recovery_needed = false;
+// Set when a frame's first sample timer has been armed but not yet fired —
+// used to defer starting the periodic timer until that first shot lands.
+static bool s_first_shot_pending = false;
 static const float emag_positions[][2] = EMAG_POSITIONS_MM;
 
 bool PositionEstimator_Init(void) {
@@ -489,6 +495,15 @@ static void sampleTimerCallback(void *arg) {
   xTaskNotifyGive(s_sensor_task_handle);
 }
 
+// Rounds time_us up to the next EMAG_FRAME_LEN_MS-spaced boundary on the
+// sync_pulse_time_us grid — used both to schedule the following frame and to
+// resync after an overrun, so both cases land on the same absolute grid.
+static int64_t nextFrameBoundaryAfter(int64_t time_us) {
+  const int64_t frame_len_us = EMAG_FRAME_LEN_MS * 1000LL;
+  return sync_pulse_time_us +
+         ((time_us - sync_pulse_time_us) / frame_len_us + 1) * frame_len_us;
+}
+
 void PositionEstimator_SetSyncTime(int64_t sync_time_us) {
   sync_pulse_time_us = sync_time_us + EMAG_SAMPLE_TIME_US;
   next_frame_time_us = sync_pulse_time_us;
@@ -546,20 +561,48 @@ void PositionEstimator_SensorTask(void *pvParameters) {
 
   // DEBUG LOOP
   // while (1) {
-  //   mag.readMeasurement();
-  //   float mx = mag.getFieldGaussX();
-  //   float my = -mag.getFieldGaussY();
-  //   float mz = -mag.getFieldGaussZ();
-  //   ESP_LOGI(TAG, "Raw mag: X=%.3f Y=%.3f Z=%.3f", mx, my, mz);
-  //   mag.setReset();
-  //   vTaskDelay(pdMS_TO_TICKS(20));
+  //   mag.self_benchmark(5000, 975);
+    // mag.readMeasurement();
+    // float mx = mag.getFieldGaussX();
+    // float my = -mag.getFieldGaussY();
+    // float mz = -mag.getFieldGaussZ();
+    // ESP_LOGI(TAG, "Raw mag: X=%.3f Y=%.3f Z=%.3f", mx, my, mz);
+    // mag.setReset();
+    // vTaskDelay(pdMS_TO_TICKS(20));
   // }
+
+  // Ends the current measurement frame: stops the timer, logs read stats,
+  // optionally queues the completed frame, and schedules the next frame slot.
+  auto endMeasuringFrame = [&](bool push_frame) {
+    esp_timer_stop(s_sample_timer);
+
+    float miss_pct = (reads_attempted > 0)
+                         ? (100.0f * reads_stale / reads_attempted)
+                         : 0.0f;
+    ESP_LOGI(TAG, "Frame %s: %lu reads, %lu stale (%.1f%% miss)",
+             push_frame ? "complete" : "aborted", reads_attempted, reads_stale,
+             miss_pct);
+    reads_attempted = 0;
+    reads_stale = 0;
+    s_consec_stale = 0;
+
+    if (push_frame) {
+      current_frame.bg_x = avgX.avg();
+      current_frame.bg_y = avgY.avg();
+      current_frame.bg_z = avgZ.avg();
+      xQueueOverwrite(emag_frame_queue, &current_frame);
+    }
+
+    current_state = STATE_IDLE;
+    set_reset_done = false;
+    next_frame_time_us = nextFrameBoundaryAfter(esp_timer_get_time());
+  };
 
   while (1) {
     // ---- Block until timer notification (MEASURING) or timeout (IDLE) ----
     if (current_state == STATE_MEASURING) {
-      // Timer drives precise wakeups; 5 ms is a safety-net fallback only
-      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5));
+      // Timer drives precise wakeups; 50 ms is a safety-net fallback only
+      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
     } else {
       // Timer is stopped in IDLE/SYNC_LOST — use timeout to service idle work
       int64_t now_us = esp_timer_get_time();
@@ -578,64 +621,42 @@ void PositionEstimator_SensorTask(void *pvParameters) {
     int64_t current_micros = esp_timer_get_time();
 
     if (current_state == STATE_MEASURING) {
+      if (s_first_shot_pending) {
+        s_first_shot_pending = false;
+        int64_t period = mag.getNominalPeriodUs() > 0 ? mag.getNominalPeriodUs()
+                                                       : EMAG_MIN_SAMPLE_PERIOD_US;
+        esp_timer_start_periodic(s_sample_timer, period);
+      }
+
       reads_attempted++;
       if (!mag.readMeasurement()) {
         reads_stale++;
-          if (s_waiting_first_aligned_shot) {
-          // Transition to periodic sampling even if first aligned shot missed
-          s_waiting_first_aligned_shot = false;
-          if (!s_periodic_running) {
-            int64_t period = mag.getNominalPeriodUs() > 0 ?
-                              mag.getNominalPeriodUs() : EMAG_MIN_SAMPLE_PERIOD_US;
-            esp_timer_start_periodic(s_sample_timer, period);
-            s_periodic_running = true;
-          }
-        }
+        s_consec_stale++;
 
-        // Even if the read was stale, the frame may have elapsed — check and
-        // finish the frame based on elapsed time so stale reads don't block
-        // frame completion.
-        int64_t frame_elapsed_us = current_micros - frame_start_time_us;
-        uint8_t emag_index = (uint8_t)(frame_elapsed_us / slot_us);
-        if (emag_index >= EMAG_COUNT) {
-          esp_timer_stop(s_sample_timer);
-          s_periodic_running = false;
-          float miss_pct = (reads_attempted > 0)
-                               ? (100.0f * reads_stale / reads_attempted)
-                               : 0.0f;
-          ESP_LOGI(TAG, "Frame complete: %lu reads, %lu stale (%.1f%% miss)",
-                   reads_attempted, reads_stale, miss_pct);
-          reads_attempted = 0;
-          reads_stale = 0;
+        // Too many consecutive stale reads: toss this frame and re-anchor phase.
+        if (s_consec_stale >= EMAG_STALE_REALIGN_THRESHOLD) {
+          endMeasuringFrame(false);
+          recovery_needed = true;
 
-          current_frame.bg_x = avgX.avg();
-          current_frame.bg_y = avgY.avg();
-          current_frame.bg_z = avgZ.avg();
-          xQueueOverwrite(emag_frame_queue, &current_frame);
-          current_state = STATE_IDLE;
-          set_reset_done = false;
-
-          next_frame_time_us =
-              sync_pulse_time_us + ((current_micros - sync_pulse_time_us) /
-                                        (EMAG_FRAME_LEN_MS * 1000) +
-                                    1) *
-                                       (EMAG_FRAME_LEN_MS * 1000);
+          //debug print error counts
+          uint32_t read_err, read_dupe;
+          mag.getErrorCounters(read_err, read_dupe);
+          ESP_LOGI(TAG, "Read error count: %u, Read duplicate count: %u", read_err, read_dupe);
+          mag.resetErrorCounters();
           continue;
         }
 
+        // Check if the current frame has elapsed even if the read was stale.
+        int64_t frame_elapsed_us = current_micros - frame_start_time_us;
+        uint8_t emag_index = (uint8_t)(frame_elapsed_us / slot_us);
+        if (emag_index >= EMAG_COUNT) {
+          endMeasuringFrame(true);
+          continue;
+        }
         continue;
       }
 
-      // If this was the first aligned shot, start the periodic timer now
-      if (s_waiting_first_aligned_shot) {
-        s_waiting_first_aligned_shot = false;
-        if (!s_periodic_running) {
-          int64_t period = mag.getNominalPeriodUs() > 0 ?
-                              mag.getNominalPeriodUs() : EMAG_MIN_SAMPLE_PERIOD_US;
-          esp_timer_start_periodic(s_sample_timer, period);
-          s_periodic_running = true;
-        }
-      }
+      s_consec_stale = 0;
 
       // Invert y and z to account for sensor orientation
       float mx = mag.getFieldGaussX();
@@ -653,36 +674,9 @@ void PositionEstimator_SensorTask(void *pvParameters) {
 
       int64_t frame_elapsed_us = current_micros - frame_start_time_us;
       uint8_t emag_index = (uint8_t)(frame_elapsed_us / slot_us);
-      read_err[reads_attempted - 1] = (frame_elapsed_us % 1000);
-
-      // Serial.printf("%ld us  \tmx: %.3f\tmy: %.3f\tmz: %.3f\n",
-      // frame_elapsed_us, mx, my, mz);
 
       if (emag_index >= EMAG_COUNT) {
-        // Frame complete — stop the periodic timer and return to IDLE
-        esp_timer_stop(s_sample_timer);
-        s_periodic_running = false;
-        float miss_pct = (reads_attempted > 0)
-                 ? (100.0f * reads_stale / reads_attempted)
-                 : 0.0f;
-          ESP_LOGI(TAG, "Frame complete: %lu reads, %lu stale (%.1f%% miss)",
-                reads_attempted, reads_stale, miss_pct);
-        reads_attempted = 0;
-        reads_stale = 0;
-
-
-        current_frame.bg_x = avgX.avg();
-        current_frame.bg_y = avgY.avg();
-        current_frame.bg_z = avgZ.avg();
-        xQueueOverwrite(emag_frame_queue, &current_frame);
-        current_state = STATE_IDLE;
-        set_reset_done = false;
-
-        next_frame_time_us =
-            sync_pulse_time_us + ((current_micros - sync_pulse_time_us) /
-                                      (EMAG_FRAME_LEN_MS * 1000) +
-                                  1) *
-                                     (EMAG_FRAME_LEN_MS * 1000);
+        endMeasuringFrame(true);
         continue;
       }
 
@@ -712,8 +706,8 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         }
       }
     } else {
-      // ---- IDLE / SYNC_LOST: read mag at background rate to maintain rolling
-      // averages ----
+      // ---- IDLE: background sampling + schedule the next frame start ----
+      // (STATE_SYNC_LOST is never entered; IDLE is the only non-MEASURING state)
       if (mag.readMeasurement()) {
         float mx = mag.getFieldGaussX();
         float my = -mag.getFieldGaussY();
@@ -723,52 +717,55 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         avgZ.add(mz);
       }
 
-      if (current_state == STATE_IDLE) {
-        int64_t time_to_next_frame_us = next_frame_time_us - current_micros;
-        if (synced && time_to_next_frame_us <= 0) {
-            frame_start_time_us = next_frame_time_us;
-            memset(&current_frame, 0, sizeof(current_frame));
-            current_state = STATE_MEASURING;
-            ESP_LOGD(TAG, "Frame start at %lld us (bench_mean=%lld)", frame_start_time_us, (long long)mag.getNominalPeriodUs());
-            // Start an aligned first-shot so periodic sampling is phase-locked to
-            // the sensor's readiness (if benchmark data available).
-            if (mag.getNominalPeriodUs() > 0) {
-              int64_t now = esp_timer_get_time();
-              int64_t ref = mag.getBenchmarkReferenceTimeUs();
-              int64_t mean = mag.getNominalPeriodUs();
-              if (mean <= 0)
-                mean = EMAG_MIN_SAMPLE_PERIOD_US;
-              int64_t n = 0;
-              if (now > ref) {
-                n = (now - ref + mean - 1) / mean; // ceil
-              }
-              int64_t next_ready = ref + n * mean;
-              int64_t delay_us = next_ready - now + 50; // safety margin
-              if (delay_us < 0)
-                delay_us = 0;
-              esp_timer_start_once(s_sample_timer, delay_us);
-              s_waiting_first_aligned_shot = true;
-              s_periodic_running = false;
-              ESP_LOGD(TAG,
-                       "Starting new emag frame at %lld us, aligned first-shot in %lld us",
-                       frame_start_time_us, delay_us);
-            } else {
-              esp_timer_start_periodic(s_sample_timer, EMAG_MIN_SAMPLE_PERIOD_US);
-              s_periodic_running = true;
-              ESP_LOGD(TAG,
-                       "Starting new emag frame at %lld us, periodic timer started (period=%d)",
-                       frame_start_time_us, EMAG_MIN_SAMPLE_PERIOD_US);
-            }
-        } else {
-          int64_t delay_ms = (time_to_next_frame_us / 1000) - 1;
-          // TODO make sure SR is run every 1s even if no state changes
-          if (!set_reset_done && delay_ms > 5) {
-            if (!mag.setReset()) {
-              ESP_LOGW(TAG, "Magnetometer set/reset failed");
-            }
-            set_reset_done = true;
-          }
+      if (!synced) {
+        continue;
+      }
+
+      int64_t time_left_us = next_frame_time_us - esp_timer_get_time();
+
+      // Missed the slot entirely — snap to the next frame boundary and let
+      // the next loop iteration handle it fresh instead of juggling both the
+      // overrun and normal-schedule cases below in the same pass.
+      if (time_left_us < 0) {
+        ESP_LOGE(TAG, "Frame overrun by %lld us, resyncing to next slot",
+                 (long long)-time_left_us);
+        next_frame_time_us = nextFrameBoundaryAfter(esp_timer_get_time());
+        continue;
+      }
+
+      if (recovery_needed) {
+        recovery_needed = false;
+        mag.recoverDevice();
+      }
+
+      // Run set/reset once per idle period, only while there's slack before
+      // the frame start so it can't itself eat into the arming window below.
+      if (!set_reset_done && time_left_us > 5000LL) {
+        if (!mag.setReset()) {
+          ESP_LOGW(TAG, "Magnetometer set/reset failed");
         }
+        set_reset_done = true;
+      }
+
+      // Re-check with fresh time — recoverDevice()/setReset() above may have
+      // taken a while and eaten into the remaining margin.
+      time_left_us = next_frame_time_us - esp_timer_get_time();
+
+      // Arm a precise one-shot timer for the frame start so the first sample
+      // lands right on the sensor's ready edge
+      if (!s_first_shot_pending && time_left_us <= EMAG_SAMPLE_TIME_US) {
+        if (time_left_us < 0)
+          time_left_us = 0;
+
+        frame_start_time_us = next_frame_time_us;
+        memset(&current_frame, 0, sizeof(current_frame));
+        current_state = STATE_MEASURING;
+        s_first_shot_pending = true;
+        esp_timer_start_once(s_sample_timer, time_left_us);
+        ESP_LOGD(TAG,
+                 "Starting new emag frame at %lld us, first shot in %lld us",
+                 (long long)frame_start_time_us,
+                 (long long)time_left_us);
       }
     }
   }

@@ -27,22 +27,29 @@ bool MMC5633NJL::begin(int sda_pin, int scl_pin, uint32_t i2c_freq) {
   if (pid != 0x10)
     return false;
 
-  // if (!writeRegister(REG_CTRL1, 0x03)) return false;
-  // if (!disableContinuousMode()) return false;
-  // if (!runSelfTest()) return false;
+  if (!runSelfTest()){
+    ESP_LOGE(TAG, "Self test failed");
+    return false;
+  }
 
   return true;
 }
 
 bool MMC5633NJL::setReset() {
   // manual set/reset, will take ~4ms to complete
-  vTaskDelay(pdMS_TO_TICKS(1));
+  bool reenable_continuous = _continuous_mode;
+  if (reenable_continuous){
+    disableContinuousMode();
+  }
   if (!writeRegister(REG_CTRL0, 0x08))
     return false;
   vTaskDelay(pdMS_TO_TICKS(1));
   if (!writeRegister(REG_CTRL0, 0x10))
     return false;
   vTaskDelay(pdMS_TO_TICKS(1));
+  if (reenable_continuous){
+    enableContinuousMode();
+  }
   return true;
 }
 
@@ -63,10 +70,18 @@ bool MMC5633NJL::readMeasurementData() {
 bool MMC5633NJL::readMeasurement(uint32_t timeout_ms) {
   if (_continuous_mode) {
     if (!readMeasurementData()) {
+      ++read_err_count;
       return false;
     }
 
     if (rawX == _lastX && rawY == _lastY && rawZ == _lastZ) {
+      ++read_dupe_count;
+      // temporary print status registers
+      // uint8_t stat = 0;
+      // readRegister(REG_STATUS0, &stat);
+      // ESP_LOGE(TAG, "STATUS0 register: 0x%02X", stat);
+      // readRegister(REG_STATUS1, &stat);
+      // ESP_LOGE(TAG, "STATUS1 register: 0x%02X", stat);
       return false;
     }
 
@@ -98,14 +113,14 @@ bool MMC5633NJL::enableContinuousMode() {
     return false;
   if (!writeRegister(REG_ODR, 0xFF))
     return false;
+  if (!writeRegister(REG_CTRL2, 0x80))
+    return false;
+  // Cmm_freq_en (0x80) | Auto_SR_en (0x20)
   if (!writeRegister(REG_CTRL0, 0x80))
     return false;
   vTaskDelay(pdMS_TO_TICKS(2));
   if (!writeRegister(REG_CTRL2, 0x90))
     return false;
-  if (!writeRegister(REG_CTRL2, 0x90))
-    return false;
-  vTaskDelay(pdMS_TO_TICKS(2));
 
   _continuous_mode = true;
   return true;
@@ -314,23 +329,11 @@ bool MMC5633NJL::recoverDevice() {
     ESP_LOGE(TAG, "Soft reset write failed");
     return false;
   }
-  vTaskDelay(pdMS_TO_TICKS(20));
+  vTaskDelay(pdMS_TO_TICKS(25));
 
-  if (!writeRegister(REG_CTRL1, 0x03))
+  if(!setReset()) {
+    ESP_LOGE(TAG, "Set/reset failed during recovery");
     return false;
-  if (!writeRegister(REG_ODR, 0xFF))
-    return false;
-  if (!writeRegister(REG_CTRL0, 0x00))
-    return false;
-
-  if (_continuous_mode) {
-    if (!enableContinuousMode()) {
-      ESP_LOGE(TAG, "Failed to re-enable continuous mode after recovery");
-      return false;
-    }
-    ESP_LOGD(TAG, "Recovery successful -- continuous mode re-enabled");
-  } else {
-    ESP_LOGD(TAG, "Recovery successful -- on-demand mode restored");
   }
 
   _lastX = UINT32_MAX;
@@ -399,4 +402,14 @@ bool MMC5633NJL::readRegisters(uint8_t reg, uint8_t *buf, size_t len) {
   for (size_t i = 0; i < len; ++i)
     buf[i] = _wire.read();
   return true;
+}
+
+void MMC5633NJL::getErrorCounters(uint32_t &read_err, uint32_t &read_dupe) const {
+  read_err = read_err_count;
+  read_dupe = read_dupe_count;
+}
+
+void MMC5633NJL::resetErrorCounters() {
+  read_err_count = 0;
+  read_dupe_count = 0;
 }

@@ -10,6 +10,7 @@ public:
 
   static constexpr uint8_t REG_XOUT0 = 0x00;
   static constexpr uint8_t REG_PRODUCT_ID = 0x39;
+  static constexpr uint8_t REG_STATUS0 = 0x19;
   static constexpr uint8_t REG_STATUS1 = 0x18;
   static constexpr uint8_t REG_ODR = 0x1A;
   static constexpr uint8_t REG_CTRL0 = 0x1B;
@@ -31,6 +32,7 @@ public:
   MMC5633NJL(TwoWire &wire = Wire);
 
   bool begin(int sda_pin = -1, int scl_pin = -1, uint32_t i2c_freq = 400000);
+  bool configure();
   bool triggerMeasurement();
   bool readMeasurementData();
   bool readMeasurement(uint32_t timeout_ms = 20);
@@ -63,6 +65,9 @@ public:
   float getAzimuthDegrees() const;
   float getAzimuthRadians() const;
 
+  void getErrorCounters(uint32_t &read_err, uint32_t &read_dupe) const;
+  void resetErrorCounters();
+
 private:
   TwoWire &_wire;
   bool _continuous_mode;
@@ -74,7 +79,10 @@ private:
   int64_t _bench_ref_time_us = 0;
   // Nominal/sample period tracked by the driver (can be set from outside)
   int64_t _nominal_period_us = 0;
-  
+
+  // error counters
+  uint32_t read_err_count = 0;
+  uint32_t read_dupe_count = 0;
 
   bool waitForMeasurementDone(uint32_t timeout_ms);
   void unpackRawXYZFromBuffer(const uint8_t *buf, size_t len);

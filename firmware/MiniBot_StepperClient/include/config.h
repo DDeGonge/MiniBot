@@ -127,41 +127,41 @@
 // TODO eventually these should be stored on the base station and sent
 // to each robot over ESP-NOW
 
-#define EMAG_POSITIONS_MM                                                      \
-  {                                                                            \
-      {40.0f, 138.79f}, /* EMAG 1 */                                           \
-      {84.0f, 215.0f},  /* EMAG 2 */                                           \
-      {40.0f, 291.21f}, /* EMAG 3 */                                           \
-  }
+// #define EMAG_POSITIONS_MM                                                      \
+//   {                                                                            \
+//       {40.0f, 138.79f}, /* EMAG 1 */                                           \
+//       {84.0f, 215.0f},  /* EMAG 2 */                                           \
+//       {40.0f, 291.21f}, /* EMAG 3 */                                           \
+//   }
 
-// #define EMAG_POSITIONS_MM {                                                    \
-//   {84.0f, 62.58f},    /* EMAG 0 */                                             \
-//   {40.0f, 138.79f},   /* EMAG 1 */                                             \
-//   {84.0f, 215.0f},    /* EMAG 2 */                                             \
-//   {40.0f, 291.21f},   /* EMAG 3 */                                             \
-//   {84.0f, 367.42f},   /* EMAG 4 */                                             \
-//   {172.0f, 62.58f},   /* EMAG 5 */                                             \
-//   {216.0f, 138.79f},  /* EMAG 6 */                                             \
-//   {172.0f, 215.0f},   /* EMAG 7 */                                             \
-//   {216.0f, 291.21f},  /* EMAG 8 */                                             \
-//   {172.0f, 367.42f},  /* EMAG 9 */                                             \
-//   {348.0f, 62.58f},   /* EMAG 10 */                                            \
-//   {303.0f, 138.79f},  /* EMAG 11 */                                            \
-//   {348.0f, 215.0f},   /* EMAG 12 */                                            \
-//   {314.0f, 291.21f},  /* EMAG 13 */                                            \
-//   {348.0f, 367.42f},  /* EMAG 14 */                                            \
-//   {436.0f, 62.58f},   /* EMAG 15 */                                            \
-//   {480.0f, 138.79f},  /* EMAG 16 */                                            \
-//   {436.0f, 215.0f},   /* EMAG 17 */                                            \
-//   {480.0f, 291.21f},  /* EMAG 18 */                                            \
-//   {436.0f, 367.42f},  /* EMAG 19 */                                            \
-// }
+#define EMAG_POSITIONS_MM {                                                    \
+  {84.0f, 62.58f},    /* EMAG 0 */                                             \
+  {40.0f, 138.79f},   /* EMAG 1 */                                             \
+  {84.0f, 215.0f},    /* EMAG 2 */                                             \
+  {40.0f, 291.21f},   /* EMAG 3 */                                             \
+  {84.0f, 367.42f},   /* EMAG 4 */                                             \
+  {172.0f, 62.58f},   /* EMAG 5 */                                             \
+  {216.0f, 138.79f},  /* EMAG 6 */                                             \
+  {172.0f, 215.0f},   /* EMAG 7 */                                             \
+  {216.0f, 291.21f},  /* EMAG 8 */                                             \
+  {172.0f, 367.42f},  /* EMAG 9 */                                             \
+  {348.0f, 62.58f},   /* EMAG 10 */                                            \
+  {303.0f, 138.79f},  /* EMAG 11 */                                            \
+  {348.0f, 215.0f},   /* EMAG 12 */                                            \
+  {314.0f, 291.21f},  /* EMAG 13 */                                            \
+  {348.0f, 367.42f},  /* EMAG 14 */                                            \
+  {436.0f, 62.58f},   /* EMAG 15 */                                            \
+  {480.0f, 138.79f},  /* EMAG 16 */                                            \
+  {436.0f, 215.0f},   /* EMAG 17 */                                            \
+  {480.0f, 291.21f},  /* EMAG 18 */                                            \
+  {436.0f, 367.42f},  /* EMAG 19 */                                            \
+}
 
 // Electromagnet frame timing setup
 #define EMAG_FRAME_LEN_MS 200 // Total frame length
-#define EMAG_COUNT 3          // Number of electromagnets in platform
-#define EMAG_FWD_ON_TIME_MS 7 // How long forward power is applied
-#define EMAG_REV_ON_TIME_MS 7 // How long reverse power is applied
+#define EMAG_COUNT 20          // Number of electromagnets in platform
+#define EMAG_FWD_ON_TIME_MS 4 // How long forward power is applied
+#define EMAG_REV_ON_TIME_MS 4 // How long reverse power is applied
 #define EMAG_TRIM_MS                                                           \
   1.1 // Samples closer than this to state changes are ignored
 static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
@@ -174,6 +174,11 @@ static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
 #define MAX_SAMPLES_PER_EMAG                                                   \
   ((EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) * 1000 /                        \
    EMAG_MIN_SAMPLE_PERIOD_US)
+
+// Stale-read realignment
+#define EMAG_STALE_REALIGN_THRESHOLD 10  // Consecutive stale reads that trigger a frame abort + realign
+#define EMAG_REALIGN_SAMPLES 20
+#define EMAG_REALIGN_POLL_TIMEOUT_MS 30
 
 // Detection thresholds
 #define FIELD_THRESHOLD_GAUSS 0.5f // Minimum field magnitude to consider valid
