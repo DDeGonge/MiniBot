@@ -46,34 +46,46 @@ bool MMC5633NJL::setReset() {
   return true;
 }
 
+bool MMC5633NJL::triggerMeasurement() {
+  uint8_t ctrl0 = (1 << 5) | (1 << 0);
+  return writeRegister(REG_CTRL0, ctrl0);
+}
+
+bool MMC5633NJL::readMeasurementData() {
+  uint8_t buf[9] = {0};
+  if (!readRegisters(REG_XOUT0, buf, 9)) {
+    return false;
+  }
+  unpackRawXYZFromBuffer(buf, 9);
+  return true;
+}
+
 bool MMC5633NJL::readMeasurement(uint32_t timeout_ms) {
   if (_continuous_mode) {
-    uint8_t buf[9] = {0};
-    if (!readRegisters(REG_XOUT0, buf, 9))
+    if (!readMeasurementData()) {
       return false;
-    unpackRawXYZFromBuffer(buf, 9);
-    if (rawX == _lastX && rawY == _lastY && rawZ == _lastZ)
+    }
+
+    if (rawX == _lastX && rawY == _lastY && rawZ == _lastZ) {
       return false;
+    }
+
     _lastX = rawX;
     _lastY = rawY;
     _lastZ = rawZ;
     return true;
   } else {
     // On-demand mode: trigger measurement and wait
-    uint8_t ctrl0 = (1 << 5) | (1 << 0);
-    if (!writeRegister(REG_CTRL0, ctrl0))
+    if (!triggerMeasurement())
       return false;
     if (!waitForMeasurementDone(timeout_ms))
       return false;
-    uint8_t buf[9] = {0};
-    if (!readRegisters(REG_XOUT0, buf, 9))
-      return false;
-    unpackRawXYZFromBuffer(buf, 9);
-    return true;
+    return readMeasurementData();
   }
 }
 
 bool MMC5633NJL::isMeasurementReady() {
+  // This takes about 200us so only use if needed
   uint8_t status = 0;
   if (!readRegister(REG_STATUS1, &status))
     return false;
@@ -101,12 +113,108 @@ bool MMC5633NJL::enableContinuousMode() {
 
 bool MMC5633NJL::disableContinuousMode() {
   // Disable continuous measurement mode
-  // TODO untested
   if (!writeRegister(REG_CTRL2, 0x00))
     return false;
   _continuous_mode = false;
   return true;
 }
+
+void MMC5633NJL::self_benchmark(uint32_t sample_count,
+                               uint32_t nominal_period_us) {
+  static int64_t ready_times_us[1000] = {0};
+  static int64_t intervals_us[999] = {0};
+
+  if (sample_count == 0) {
+    ESP_LOGW(TAG, "MMC5633 self_benchmark requested zero samples");
+    return;
+  }
+
+  if (sample_count > 1000) {
+    sample_count = 1000;
+  }
+
+  if (!enableContinuousMode()) {
+    ESP_LOGE(TAG, "Failed to enable MMC5633 continuous mode for self benchmark");
+    return;
+  }
+
+  ESP_LOGI(TAG,
+           "MMC5633 timing benchmark: polling readiness and reading %lu times "
+           "in continuous mode at nominal %lu us",
+           sample_count, nominal_period_us);
+
+  for (uint32_t i = 0; i < sample_count; ++i) {
+    uint32_t poll_attempts = 0;
+    while (!isMeasurementReady()) {
+      poll_attempts++;
+      if (poll_attempts > 100000) {
+        ESP_LOGE(TAG,
+                 "Measurement %lu never became ready; last status poll at %lld us",
+                 i, esp_timer_get_time());
+        disableContinuousMode();
+        return;
+      }
+    }
+
+    int64_t ready_us = esp_timer_get_time();
+    ready_times_us[i] = ready_us;
+
+    if (!readMeasurementData()) {
+      ESP_LOGE(TAG, "Failed to read measurement %lu at %lld us", i, ready_us);
+      disableContinuousMode();
+      return;
+    }
+
+    if (i > 0) {
+      intervals_us[i - 1] = ready_us - ready_times_us[i - 1];
+    }
+  }
+
+  float sum_period_us = 0.0f;
+  float sum_of_squares = 0.0f;
+  int64_t max_dev_us = 0;
+
+  for (uint32_t i = 0; i < sample_count - 1; ++i) {
+    float period_us = (float)intervals_us[i];
+    sum_period_us += period_us;
+    sum_of_squares += period_us * period_us;
+
+    int64_t dev_us = intervals_us[i] - (int64_t)nominal_period_us;
+    if (dev_us < 0)
+      dev_us = -dev_us;
+    if (dev_us > max_dev_us)
+      max_dev_us = dev_us;
+  }
+
+  float mean_period_us = sum_period_us / (float)(sample_count - 1);
+  float variance_us = (sum_of_squares / (float)(sample_count - 1)) -
+                      (mean_period_us * mean_period_us);
+  if (variance_us < 0.0f)
+    variance_us = 0.0f;
+  float stdev_us = sqrtf(variance_us);
+  float sample_rate_hz = 1000000.0f / mean_period_us;
+
+  ESP_LOGI(TAG,
+           "MMC5633 benchmark complete: ready_times[0]=%lld us, ready_times[%lu]=%lld us, "
+           "sample rate %.6f Hz, mean period %.3f us, "
+           "stdev %.3f us, max deviation from nominal %lld us",
+           ready_times_us[0], sample_count - 1, ready_times_us[sample_count - 1],
+           sample_rate_hz, mean_period_us, stdev_us, max_dev_us);
+
+  // Store benchmark metrics for later use
+  _bench_mean_period_us = mean_period_us;
+  _bench_stdev_us = stdev_us;
+  _bench_ref_time_us = ready_times_us[0];
+
+  disableContinuousMode();
+}
+
+float MMC5633NJL::getBenchmarkMeanPeriodUs() const { return _bench_mean_period_us; }
+float MMC5633NJL::getBenchmarkStdevUs() const { return _bench_stdev_us; }
+int64_t MMC5633NJL::getBenchmarkReferenceTimeUs() const { return _bench_ref_time_us; }
+
+void MMC5633NJL::setNominalPeriodUs(int64_t period_us) { _nominal_period_us = period_us; }
+int64_t MMC5633NJL::getNominalPeriodUs() const { return _nominal_period_us; }
 
 bool MMC5633NJL::runSelfTest(uint32_t timeout_ms) {
   uint8_t stx = 0, sty = 0, stz = 0;

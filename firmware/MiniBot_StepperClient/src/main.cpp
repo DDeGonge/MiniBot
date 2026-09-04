@@ -211,7 +211,7 @@ void setup() {
 
   // Write device ID to NVS, ony do this one time. Persistant across reflashes.
   // TODO create a function to set ID based on current position on chess board
-  // setDeviceID(0x07);
+  // setDeviceID(0x0d);
 
   uint8_t device_id = getDeviceID();
   if (device_id == 0xFF) {

@@ -68,7 +68,7 @@
 #define MSET_DIR_LVL true
 
 // Motor reversal
-#define L_WHEEL_REVERSE false
+#define L_WHEEL_REVERSE true
 #define R_WHEEL_REVERSE true
 
 // ============================================================================
@@ -88,8 +88,8 @@
 
 #define ROBOT_MAX_VELOCITY_MM_S 250.0f // Maximum linear velocity (mm/s)
 #define ROBOT_MAX_ACCEL_MM_S2 500.0f   // Maximum linear acceleration (mm/s²)
-#define MAX_ROT_VEL_RAD_S 5.0f         // Maximum angular velocity (rad/s)
-#define MAX_ROT_ACCEL_RAD_S2 20.0f     // Maximum angular acceleration (rad/s²)
+#define MAX_ROT_VEL_RAD_S 20.0f         // Maximum angular velocity (rad/s)
+#define MAX_ROT_ACCEL_RAD_S2 50.0f     // Maximum angular acceleration (rad/s²)
 
 // Motor test command configuration
 #define MOTOR_TEST_TIMEOUT_MS 1000 // Timeout for motor test commands
@@ -169,7 +169,7 @@ static_assert(EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) <=
               "EMAG slot time * EMAG_COUNT exceeds EMAG_FRAME_LEN_MS");
 
 // Sampling
-#define EMAG_MIN_SAMPLE_PERIOD_US 1000 // 1 kHz sampling rate
+#define EMAG_MIN_SAMPLE_PERIOD_US 950 // 1 kHz sampling rate but actually 1050hz measured
 #define EMAG_SAMPLE_TIME_US 1200 // Sensor read delay, needed for time sync
 #define MAX_SAMPLES_PER_EMAG                                                   \
   ((EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) * 1000 /                        \

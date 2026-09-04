@@ -20,6 +20,7 @@ static bool mag_initialized = false;
 static EmagFrameData current_frame;
 static PositionEstState current_state = STATE_IDLE;
 static int64_t frame_start_time_us = 0;
+static bool frame_shift_pending = false;
 
 static QueueHandle_t emag_frame_queue = NULL;
 
@@ -29,6 +30,9 @@ static bool synced = false;
 
 static TaskHandle_t s_sensor_task_handle = NULL;
 static esp_timer_handle_t s_sample_timer = NULL;
+static bool s_waiting_first_aligned_shot = false;
+static bool s_periodic_running = false;
+
 
 static const float emag_positions[][2] = EMAG_POSITIONS_MM;
 
@@ -496,6 +500,17 @@ void PositionEstimator_SetSyncTime(int64_t sync_time_us) {
 void PositionEstimator_SensorTask(void *pvParameters) {
   vTaskDelay(pdMS_TO_TICKS(100));
 
+  mag.self_benchmark(1000, 1000);
+  // Read benchmark metrics if available and store nominal period in driver
+  if (mag.getBenchmarkMeanPeriodUs() > 0.0f) {
+    mag.setNominalPeriodUs((int64_t)mag.getBenchmarkMeanPeriodUs());
+    ESP_LOGI(TAG, "Mag benchmark: mean=%lld us, ref=%lld us",
+             (long long)mag.getNominalPeriodUs(),
+             mag.getBenchmarkReferenceTimeUs());
+  } else {
+    mag.setNominalPeriodUs(EMAG_MIN_SAMPLE_PERIOD_US);
+  }
+
   if (emag_frame_queue == NULL) {
     ESP_LOGE(TAG, "emag_frame_queue not initialized");
     vTaskDelete(NULL);
@@ -565,21 +580,60 @@ void PositionEstimator_SensorTask(void *pvParameters) {
     if (current_state == STATE_MEASURING) {
       reads_attempted++;
       if (!mag.readMeasurement()) {
-        // Busy-wait up to 3 × 50 µs for data to become ready
-        bool ready = false;
-        for (int retry = 0; retry < 2; retry++) {
-          esp_rom_delay_us(50);
-          if (mag.readMeasurement()) {
-            ready = true;
-            break;
+        reads_stale++;
+          if (s_waiting_first_aligned_shot) {
+          // Transition to periodic sampling even if first aligned shot missed
+          s_waiting_first_aligned_shot = false;
+          if (!s_periodic_running) {
+            int64_t period = mag.getNominalPeriodUs() > 0 ?
+                              mag.getNominalPeriodUs() : EMAG_MIN_SAMPLE_PERIOD_US;
+            esp_timer_start_periodic(s_sample_timer, period);
+            s_periodic_running = true;
           }
         }
-        if (!ready) {
-          reads_stale++;
-          ESP_LOGD(TAG,
-                   "Stale read unresolved after retries (total stale: %lu)",
-                   reads_stale);
+
+        // Even if the read was stale, the frame may have elapsed — check and
+        // finish the frame based on elapsed time so stale reads don't block
+        // frame completion.
+        int64_t frame_elapsed_us = current_micros - frame_start_time_us;
+        uint8_t emag_index = (uint8_t)(frame_elapsed_us / slot_us);
+        if (emag_index >= EMAG_COUNT) {
+          esp_timer_stop(s_sample_timer);
+          s_periodic_running = false;
+          float miss_pct = (reads_attempted > 0)
+                               ? (100.0f * reads_stale / reads_attempted)
+                               : 0.0f;
+          ESP_LOGI(TAG, "Frame complete: %lu reads, %lu stale (%.1f%% miss)",
+                   reads_attempted, reads_stale, miss_pct);
+          reads_attempted = 0;
+          reads_stale = 0;
+
+          current_frame.bg_x = avgX.avg();
+          current_frame.bg_y = avgY.avg();
+          current_frame.bg_z = avgZ.avg();
+          xQueueOverwrite(emag_frame_queue, &current_frame);
+          current_state = STATE_IDLE;
+          set_reset_done = false;
+
+          next_frame_time_us =
+              sync_pulse_time_us + ((current_micros - sync_pulse_time_us) /
+                                        (EMAG_FRAME_LEN_MS * 1000) +
+                                    1) *
+                                       (EMAG_FRAME_LEN_MS * 1000);
           continue;
+        }
+
+        continue;
+      }
+
+      // If this was the first aligned shot, start the periodic timer now
+      if (s_waiting_first_aligned_shot) {
+        s_waiting_first_aligned_shot = false;
+        if (!s_periodic_running) {
+          int64_t period = mag.getNominalPeriodUs() > 0 ?
+                              mag.getNominalPeriodUs() : EMAG_MIN_SAMPLE_PERIOD_US;
+          esp_timer_start_periodic(s_sample_timer, period);
+          s_periodic_running = true;
         }
       }
 
@@ -607,22 +661,15 @@ void PositionEstimator_SensorTask(void *pvParameters) {
       if (emag_index >= EMAG_COUNT) {
         // Frame complete — stop the periodic timer and return to IDLE
         esp_timer_stop(s_sample_timer);
+        s_periodic_running = false;
         float miss_pct = (reads_attempted > 0)
-                             ? (100.0f * reads_stale / reads_attempted)
-                             : 0.0f;
-        ESP_LOGI(TAG, "Frame complete: %lu reads, %lu stale (%.1f%% miss)",
-                 reads_attempted, reads_stale, miss_pct);
+                 ? (100.0f * reads_stale / reads_attempted)
+                 : 0.0f;
+          ESP_LOGI(TAG, "Frame complete: %lu reads, %lu stale (%.1f%% miss)",
+                reads_attempted, reads_stale, miss_pct);
         reads_attempted = 0;
         reads_stale = 0;
 
-        char buf[256];
-        size_t n = sizeof(read_err) /
-                   sizeof(read_err[0]); // if it's a real array, not a pointer
-        for (size_t i = 0; i < n && len < (int)sizeof(buf); i++) {
-          len += snprintf(buf + len, sizeof(buf) - len, "%d ", read_err[i]);
-        }
-
-        ESP_LOGI(TAG, "read_err: %s", buf);
 
         current_frame.bg_x = avgX.avg();
         current_frame.bg_y = avgY.avg();
@@ -679,13 +726,39 @@ void PositionEstimator_SensorTask(void *pvParameters) {
       if (current_state == STATE_IDLE) {
         int64_t time_to_next_frame_us = next_frame_time_us - current_micros;
         if (synced && time_to_next_frame_us <= 0) {
-          frame_start_time_us = next_frame_time_us;
-          memset(&current_frame, 0, sizeof(current_frame));
-          current_state = STATE_MEASURING;
-          esp_timer_start_periodic(s_sample_timer, EMAG_MIN_SAMPLE_PERIOD_US);
-          ESP_LOGD(TAG,
-                   "Starting new emag frame at %lld us, periodic timer started",
-                   frame_start_time_us);
+            frame_start_time_us = next_frame_time_us;
+            memset(&current_frame, 0, sizeof(current_frame));
+            current_state = STATE_MEASURING;
+            ESP_LOGD(TAG, "Frame start at %lld us (bench_mean=%lld)", frame_start_time_us, (long long)mag.getNominalPeriodUs());
+            // Start an aligned first-shot so periodic sampling is phase-locked to
+            // the sensor's readiness (if benchmark data available).
+            if (mag.getNominalPeriodUs() > 0) {
+              int64_t now = esp_timer_get_time();
+              int64_t ref = mag.getBenchmarkReferenceTimeUs();
+              int64_t mean = mag.getNominalPeriodUs();
+              if (mean <= 0)
+                mean = EMAG_MIN_SAMPLE_PERIOD_US;
+              int64_t n = 0;
+              if (now > ref) {
+                n = (now - ref + mean - 1) / mean; // ceil
+              }
+              int64_t next_ready = ref + n * mean;
+              int64_t delay_us = next_ready - now + 50; // safety margin
+              if (delay_us < 0)
+                delay_us = 0;
+              esp_timer_start_once(s_sample_timer, delay_us);
+              s_waiting_first_aligned_shot = true;
+              s_periodic_running = false;
+              ESP_LOGD(TAG,
+                       "Starting new emag frame at %lld us, aligned first-shot in %lld us",
+                       frame_start_time_us, delay_us);
+            } else {
+              esp_timer_start_periodic(s_sample_timer, EMAG_MIN_SAMPLE_PERIOD_US);
+              s_periodic_running = true;
+              ESP_LOGD(TAG,
+                       "Starting new emag frame at %lld us, periodic timer started (period=%d)",
+                       frame_start_time_us, EMAG_MIN_SAMPLE_PERIOD_US);
+            }
         } else {
           int64_t delay_ms = (time_to_next_frame_us / 1000) - 1;
           // TODO make sure SR is run every 1s even if no state changes

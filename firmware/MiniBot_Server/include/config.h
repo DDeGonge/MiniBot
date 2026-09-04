@@ -25,16 +25,21 @@
 #define POS_SYNC_BURST_COUNT 30      // Number of sync pulses in burst
 #define POS_SYNC_BURST_INTERVAL_MS 3 // Interval between burst pulses
 
-// GPIO pins for electromagnets (A=forward drive, B=reverse drive)
-const uint8_t EMAG_PINS_A[EMAG_COUNT] = {
-    6,
-    8,
-    18,
+// Shared GPIO pin for electromagnet direction
+const uint8_t EMAG_DIR_PIN = 32;
+const bool flip_emag_direction = true;
+
+// Per-electromagnet enable pin numbers. If on IO expander, Port A is 0-7, B is 8-15
+const uint8_t EMAG_EN_PINS[EMAG_COUNT] = {
+  2,  // EMAG 1: native GPIO 2
+  0,  // EMAG 2: expander pin 0
+  1,  // EMAG 3: expander pin 1
 };
-const uint8_t EMAG_PINS_B[EMAG_COUNT] = {
-    7,
-    9,
-    19,
+
+const bool EMAG_EN_ON_EXPANDER[EMAG_COUNT] = {
+  false,
+  true,
+  true,
 };
 
 // ============= Joystick Configuration =============

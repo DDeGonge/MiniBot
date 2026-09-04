@@ -572,7 +572,7 @@ void Robot::executeStepLoop(const WheelMotion &profile, float steps_per_mm) {
           (int64_t)((profile.accel_time_s + profile.cruise_time_s) * 1e6f) -
           500;
       if (!preciseWaitUntil(cruise_end_us)) {
-        ESP_LOGW(TAG, "  Cruise phase timing missed");
+        ESP_LOGD(TAG, "  Cruise phase timing missed");
       }
 
       // Then busywait until both timers have completed, 2ms timeout
@@ -605,7 +605,7 @@ void Robot::executeStepLoop(const WheelMotion &profile, float steps_per_mm) {
 
     if (target_us != -1) {
       if (!preciseWaitUntil(target_us)) {
-        ESP_LOGW(TAG, "  Accel/Decel phase timing missed for step %ld",
+        ESP_LOGD(TAG, "  Accel/Decel phase timing missed for step %ld",
                  steps_done + 1);
       }
       left_wheel.step();

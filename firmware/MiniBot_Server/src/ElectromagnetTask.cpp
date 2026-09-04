@@ -1,5 +1,6 @@
 #include "ElectromagnetTask.h"
 #include <esp_timer.h>
+#include "MCP23S17.h"
 
 // Task handle
 TaskHandle_t emagTaskHandle = NULL;
@@ -7,50 +8,117 @@ TaskHandle_t emagTaskHandle = NULL;
 // Control flags
 volatile bool emagEnabled = false;
 volatile int64_t nextFrameStartUs = 0;
+static MCP ioExpander(0, 5);
+static Electromagnet EMAGNETS[EMAG_COUNT];
+static unsigned int expanderOutputCache = 0;
+
+Electromagnet::Electromagnet() {}
+Electromagnet::Electromagnet(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin)
+    : en_pin(en_pin), dir_pin(dir_pin), on_io_expander(on_io_expander) {}
+
+void Electromagnet::init(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin) {
+  this->on_io_expander = on_io_expander;
+  this->en_pin = en_pin;
+  this->dir_pin = dir_pin;
+  this->enabled = false;
+  this->forward = true;
+}
+
+void Electromagnet::set(bool enabled, bool forward) {
+  setDirection(forward);
+  enable(enabled);
+}
+
+void Electromagnet::enable(bool enabled_) {
+  enabled = enabled_;
+  if (on_io_expander) {
+    // update cached output bit and write full word once
+    if (enabled)
+      expanderOutputCache |= (1u << en_pin);
+    else
+      expanderOutputCache &= ~(1u << en_pin);
+    ioExpander.digitalWrite(expanderOutputCache);
+  } else {
+    digitalWrite(en_pin, enabled ? HIGH : LOW);
+  }
+}
+
+void Electromagnet::setDirection(bool forward_) {
+  forward = forward_;
+  // Direction pin is shared and assumed to be a GPIO
+  if (flip_emag_direction) {
+    digitalWrite(dir_pin, forward ? LOW : HIGH);
+  } else {
+    digitalWrite(dir_pin, forward ? HIGH : LOW);
+  }
+}
+
+bool Electromagnet::isEnabled() const { return enabled; }
+
+bool Electromagnet::isForward() const { return forward; }
 
 // Initialize electromagnets
 void initElectromagnets() {
   if (EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) >
       EMAG_FRAME_LEN_MS) {
-    DEBUG_PRINTLN("WARNING: Electromagnet on-time exceeds frame length! Adjust "
+    Serial.println("WARNING: Electromagnet on-time exceeds frame length! Adjust "
                   "timing parameters.");
   }
 
-  // Configure all electromagnet pins as outputs, start disabled
-  for (int i = 0; i < EMAG_COUNT; i++) {
-    pinMode(EMAG_PINS_A[i], OUTPUT);
-    pinMode(EMAG_PINS_B[i], OUTPUT);
-    digitalWrite(EMAG_PINS_A[i], LOW);
-    digitalWrite(EMAG_PINS_B[i], LOW);
-  }
+  // Initialize IO expander and shared direction pin
+  ioExpander.begin(); // uses the default MOSI MISO SCK pins for esp32
+  pinMode(EMAG_DIR_PIN, OUTPUT);
+  digitalWrite(EMAG_DIR_PIN, LOW);
 
-  DEBUG_PRINTLN("Electromagnets initialized");
+  // Configure each electromagnet enable pin (either GPIO or expander)
+  expanderOutputCache = 0;
+  for (int i = 0; i < EMAG_COUNT; i++) {
+    if (EMAG_EN_ON_EXPANDER[i]) {
+      // MCP library pin numbers are 1..16; our EMAG_EN_PINS are 0-based.
+      ioExpander.pinMode(EMAG_EN_PINS[i] + 1, OUTPUT); // Configure as output (1-based)
+      expanderOutputCache &= ~(1u << EMAG_EN_PINS[i]);
+    } else {
+      pinMode(EMAG_EN_PINS[i], OUTPUT);
+      digitalWrite(EMAG_EN_PINS[i], LOW);
+    }
+    EMAGNETS[i].init(EMAG_EN_ON_EXPANDER[i], EMAG_EN_PINS[i], EMAG_DIR_PIN);
+  }
+  // ensure expander outputs are cleared on the chip
+  ioExpander.digitalWrite(expanderOutputCache);
+
+  Serial.println("Electromagnets initialized");
 }
 
 bool setElectromagnet(uint8_t emag_i, bool enabled, bool forward) {
   if (emag_i >= EMAG_COUNT) {
-    DEBUG_PRINTF("Invalid electromagnet index: %d\n", emag_i);
+    Serial.printf("Invalid electromagnet index: %d\n", emag_i);
     return false;
   }
-
-  if (!enabled) {
-    digitalWrite(EMAG_PINS_A[emag_i], LOW);
-    digitalWrite(EMAG_PINS_B[emag_i], LOW);
-  } else if (forward) {
-    digitalWrite(EMAG_PINS_A[emag_i], HIGH);
-    digitalWrite(EMAG_PINS_B[emag_i], LOW);
-  } else {
-    digitalWrite(EMAG_PINS_A[emag_i], LOW);
-    digitalWrite(EMAG_PINS_B[emag_i], HIGH);
-  }
+  EMAGNETS[emag_i].set(enabled, forward);
   return true;
 }
 
 // Set all electromagnets: disabled=[0,0], forward=[1,0], reverse=[0,1]
 void setAllElectromagnets(bool enabled, bool forward) {
-  for (int i = 0; i < EMAG_COUNT; i++) {
-    setElectromagnet(i, enabled, forward);
+  // Set shared direction first
+  if (flip_emag_direction) {
+    digitalWrite(EMAG_DIR_PIN, forward ? LOW : HIGH);
+  } else {
+    digitalWrite(EMAG_DIR_PIN, forward ? HIGH : LOW);
   }
+
+  // Build expander word and set GPIOs
+  unsigned int expanderWord = 0;
+  for (int i = 0; i < EMAG_COUNT; i++) {
+    if (EMAG_EN_ON_EXPANDER[i]) {
+      if (enabled)
+        expanderWord |= (1u << EMAG_EN_PINS[i]);
+    } else {
+      digitalWrite(EMAG_EN_PINS[i], enabled ? HIGH : LOW);
+    }
+  }
+  ioExpander.digitalWrite(expanderWord);
+  expanderOutputCache = expanderWord;
 }
 
 // Enable/disable electromagnet cycling
@@ -59,7 +127,6 @@ void setElectromagnetEnabled(bool enabled) {
   if (!enabled) {
     setAllElectromagnets(false);
   }
-  DEBUG_PRINTF("Electromagnet cycling %s\n", enabled ? "ENABLED" : "DISABLED");
 }
 
 // Get current state
@@ -93,7 +160,7 @@ static bool waitUntilUs(int64_t targetUs) {
 
 // FreeRTOS electromagnet task
 void electromagnetTask(void *parameter) {
-  DEBUG_PRINTLN("Electromagnet Task started");
+  Serial.println("Electromagnet Task started");
 
   const int64_t frameLenUs = (int64_t)EMAG_FRAME_LEN_MS * 1000LL;
   nextFrameStartUs = esp_timer_get_time();
@@ -101,7 +168,7 @@ void electromagnetTask(void *parameter) {
   while (1) {
     nextFrameStartUs += frameLenUs;
     if (!waitUntilUs(nextFrameStartUs)) {
-      DEBUG_PRINTLN("Frame skipped: overrun at frame start");
+      Serial.println("Frame skipped: overrun at frame start");
       continue;
     }
     if (!emagEnabled) {
@@ -112,6 +179,10 @@ void electromagnetTask(void *parameter) {
     const int64_t fwdOnUs = (int64_t)EMAG_FWD_ON_TIME_MS * 1000LL;
     const int64_t revOnUs = (int64_t)EMAG_REV_ON_TIME_MS * 1000LL;
     int64_t interFrameTimeUs = nextFrameStartUs;
+
+    // DEBUG LOOP
+    // setAllElectromagnets(true, true);
+    // vTaskDelay(pdMS_TO_TICKS((uint32_t)30));
 
     for (int i = 0; i < EMAG_COUNT && emagEnabled; i++) {
       // Forward ON

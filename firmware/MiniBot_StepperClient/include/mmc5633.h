@@ -31,10 +31,22 @@ public:
   MMC5633NJL(TwoWire &wire = Wire);
 
   bool begin(int sda_pin = -1, int scl_pin = -1, uint32_t i2c_freq = 400000);
+  bool triggerMeasurement();
+  bool readMeasurementData();
   bool readMeasurement(uint32_t timeout_ms = 20);
   bool isMeasurementReady();
   bool enableContinuousMode();
   bool disableContinuousMode();
+  void self_benchmark(uint32_t sample_count = 1000,
+                     uint32_t nominal_period_us = 1000);
+  // Benchmark results (mean period, stdev, and reference ready time)
+  float getBenchmarkMeanPeriodUs() const;
+  float getBenchmarkStdevUs() const;
+  int64_t getBenchmarkReferenceTimeUs() const;
+  // Nominal/sample period setter/getter
+  void setNominalPeriodUs(int64_t period_us);
+  int64_t getNominalPeriodUs() const;
+  
   bool runSelfTest(uint32_t timeout_ms = 100);
   bool setReset();
   void checkDeviceStatus();
@@ -56,6 +68,13 @@ private:
   bool _continuous_mode;
   uint32_t rawX = 0, rawY = 0, rawZ = 0;
   uint32_t _lastX = UINT32_MAX, _lastY = UINT32_MAX, _lastZ = UINT32_MAX;
+  // Benchmark metrics
+  float _bench_mean_period_us = 0.0f;
+  float _bench_stdev_us = 0.0f;
+  int64_t _bench_ref_time_us = 0;
+  // Nominal/sample period tracked by the driver (can be set from outside)
+  int64_t _nominal_period_us = 0;
+  
 
   bool waitForMeasurementDone(uint32_t timeout_ms);
   void unpackRawXYZFromBuffer(const uint8_t *buf, size_t len);
