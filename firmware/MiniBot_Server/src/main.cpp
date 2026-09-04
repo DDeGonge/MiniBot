@@ -109,14 +109,14 @@ void setup() {
 
   xTaskCreatePinnedToCore(serialTask,        // Task function
                           "Serial Task",     // Task name
-                          3072,              // Stack size (bytes)
+                          4096,              // Stack size (bytes)
                           NULL,              // Parameter
                           3,                 // Priority
                           &serialTaskHandle, // Task handle
                           0                  // Core (0 or 1)
   );
 
-  DEBUG_PRINTLN("Setup complete!");
+  Serial.println("Setup complete!");
 }
 
 // ============================================

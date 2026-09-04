@@ -32,10 +32,26 @@ void setElectromagnetEnabled(bool enabled);
 // Get current state
 bool getElectromagnetEnabled();
 
-// Request a one-shot 3ms sync pulse at the start of the next emag frame
-void triggerSyncPulse();
-
 // Returns microseconds until the start of the next emag frame
 uint32_t getTimeToNextFrameUs();
+
+class Electromagnet {
+    public:
+        Electromagnet();
+        Electromagnet(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin = EMAG_DIR_PIN);
+        void init(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin = EMAG_DIR_PIN);
+        void set(bool enabled, bool forward);
+        void enable(bool enabled);
+        void setDirection(bool forward);
+        bool isEnabled() const;
+        bool isForward() const;
+
+    private:
+        uint8_t en_pin = 0;
+        uint8_t dir_pin = EMAG_DIR_PIN;
+        bool on_io_expander = false;
+        bool enabled = false;
+        bool forward = true;
+};
 
 #endif // ELECTROMAGNET_TASK_H

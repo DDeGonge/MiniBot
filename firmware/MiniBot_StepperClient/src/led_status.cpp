@@ -76,12 +76,12 @@ void LedStatus_Task(void *pvParameters) {
       break;
 
     case LED_STATUS_READY:
-      led_brightness = 127;
+      led_brightness = 200;
       blink_pattern(1, 50, 950);
       break;
 
     case LED_STATUS_MOVING:
-      led_brightness = 127;
+      led_brightness = 200;
       breathing(led_pin);
       break;
 
