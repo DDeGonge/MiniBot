@@ -5,6 +5,7 @@
 #define LOG_LOCAL_LEVEL LOG_LEVEL_POS_EST
 #include "config.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include <Arduino.h>
 #include <Wire.h>
@@ -498,18 +499,41 @@ static void sampleTimerCallback(void *arg) {
 // Rounds time_us up to the next EMAG_FRAME_LEN_MS-spaced boundary on the
 // sync_pulse_time_us grid — used both to schedule the following frame and to
 // resync after an overrun, so both cases land on the same absolute grid.
-static int64_t nextFrameBoundaryAfter(int64_t time_us) {
+static int64_t nextFrameBoundaryAfter(int64_t time_us,
+                                      uint16_t skip_frames_count = 0) {
   const int64_t frame_len_us = EMAG_FRAME_LEN_MS * 1000LL;
-  return sync_pulse_time_us +
-         ((time_us - sync_pulse_time_us) / frame_len_us + 1) * frame_len_us;
+  return sync_pulse_time_us + ((time_us - sync_pulse_time_us) / frame_len_us +
+                               1 + skip_frames_count) *
+                                  frame_len_us;
 }
 
 void PositionEstimator_SetSyncTime(int64_t sync_time_us) {
-  sync_pulse_time_us = sync_time_us + EMAG_SAMPLE_TIME_US;
+  // Diagnostics only (cheap, called at most once per sync period, never in a
+  // hot loop) — helps correlate "overruns start after N syncs" reports with
+  // sync cadence/drift.
+  static uint32_t s_sync_count = 0;
+  static int64_t s_prev_sync_pulse_time_us = 0;
+  int64_t new_sync_pulse_time_us = sync_time_us + EMAG_SAMPLE_TIME_US;
+  int64_t now_us = esp_timer_get_time();
+  int64_t delta_from_prev_us =
+      (s_prev_sync_pulse_time_us != 0)
+          ? new_sync_pulse_time_us - s_prev_sync_pulse_time_us
+          : 0;
+  s_sync_count++;
+  ESP_LOGI(TAG,
+           "SYNC #%lu: new_sync_pulse=%lld us, delta_from_prev_sync=%lld us "
+           "(expect multiple of %d ms), lead_before_now=%lld us, "
+           "prev_next_frame_target=%lld us, was_synced=%d",
+           (unsigned long)s_sync_count, (long long)new_sync_pulse_time_us,
+           (long long)delta_from_prev_us, EMAG_FRAME_LEN_MS,
+           (long long)(new_sync_pulse_time_us - now_us),
+           (long long)next_frame_time_us, synced);
+  s_prev_sync_pulse_time_us = new_sync_pulse_time_us;
+
+  sync_pulse_time_us = new_sync_pulse_time_us;
   next_frame_time_us = sync_pulse_time_us;
   synced = true;
   current_state = STATE_IDLE;
-  ESP_LOGD(TAG, "Sync time: {%lu} us", sync_time_us);
 }
 
 void PositionEstimator_SensorTask(void *pvParameters) {
@@ -525,6 +549,11 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   } else {
     mag.setNominalPeriodUs(EMAG_MIN_SAMPLE_PERIOD_US);
   }
+
+  // One-time diagnostic: confirms the RTOS tick granularity used by
+  // pdMS_TO_TICKS() in the idle-wait clamp below.
+  ESP_LOGI(TAG, "RTOS tick rate: %d Hz (%.3f ms/tick)", configTICK_RATE_HZ,
+           1000.0 / configTICK_RATE_HZ);
 
   if (emag_frame_queue == NULL) {
     ESP_LOGE(TAG, "emag_frame_queue not initialized");
@@ -562,13 +591,13 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   // DEBUG LOOP
   // while (1) {
   //   mag.self_benchmark(5000, 975);
-    // mag.readMeasurement();
-    // float mx = mag.getFieldGaussX();
-    // float my = -mag.getFieldGaussY();
-    // float mz = -mag.getFieldGaussZ();
-    // ESP_LOGI(TAG, "Raw mag: X=%.3f Y=%.3f Z=%.3f", mx, my, mz);
-    // mag.setReset();
-    // vTaskDelay(pdMS_TO_TICKS(20));
+  // mag.readMeasurement();
+  // float mx = mag.getFieldGaussX();
+  // float my = -mag.getFieldGaussY();
+  // float mz = -mag.getFieldGaussZ();
+  // ESP_LOGI(TAG, "Raw mag: X=%.3f Y=%.3f Z=%.3f", mx, my, mz);
+  // mag.setReset();
+  // vTaskDelay(pdMS_TO_TICKS(20));
   // }
 
   // Ends the current measurement frame: stops the timer, logs read stats,
@@ -576,9 +605,8 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   auto endMeasuringFrame = [&](bool push_frame) {
     esp_timer_stop(s_sample_timer);
 
-    float miss_pct = (reads_attempted > 0)
-                         ? (100.0f * reads_stale / reads_attempted)
-                         : 0.0f;
+    float miss_pct =
+        (reads_attempted > 0) ? (100.0f * reads_stale / reads_attempted) : 0.0f;
     ESP_LOGI(TAG, "Frame %s: %lu reads, %lu stale (%.1f%% miss)",
              push_frame ? "complete" : "aborted", reads_attempted, reads_stale,
              miss_pct);
@@ -606,10 +634,12 @@ void PositionEstimator_SensorTask(void *pvParameters) {
     } else {
       // Timer is stopped in IDLE/SYNC_LOST — use timeout to service idle work
       int64_t now_us = esp_timer_get_time();
-      int64_t idle_wait_us =
+      int64_t idle_wait_raw_us =
           synced ? (next_frame_time_us - now_us - 1000LL) : 10000LL;
-      if (idle_wait_us < 1000LL)
+      int64_t idle_wait_us = idle_wait_raw_us;
+      if (idle_wait_us < 1000LL) {
         idle_wait_us = 1000LL;
+      }
       if (idle_wait_us > 10000LL)
         idle_wait_us = 10000LL;
       ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(idle_wait_us / 1000));
@@ -623,8 +653,9 @@ void PositionEstimator_SensorTask(void *pvParameters) {
     if (current_state == STATE_MEASURING) {
       if (s_first_shot_pending) {
         s_first_shot_pending = false;
-        int64_t period = mag.getNominalPeriodUs() > 0 ? mag.getNominalPeriodUs()
-                                                       : EMAG_MIN_SAMPLE_PERIOD_US;
+        int64_t period = mag.getNominalPeriodUs() > 0
+                             ? mag.getNominalPeriodUs()
+                             : EMAG_MIN_SAMPLE_PERIOD_US;
         esp_timer_start_periodic(s_sample_timer, period);
       }
 
@@ -633,15 +664,17 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         reads_stale++;
         s_consec_stale++;
 
-        // Too many consecutive stale reads: toss this frame and re-anchor phase.
+        // Too many consecutive stale reads: toss this frame and re-anchor
+        // phase.
         if (s_consec_stale >= EMAG_STALE_REALIGN_THRESHOLD) {
           endMeasuringFrame(false);
           recovery_needed = true;
 
-          //debug print error counts
+          // debug print error counts
           uint32_t read_err, read_dupe;
           mag.getErrorCounters(read_err, read_dupe);
-          ESP_LOGI(TAG, "Read error count: %u, Read duplicate count: %u", read_err, read_dupe);
+          ESP_LOGI(TAG, "Read error count: %u, Read duplicate count: %u",
+                   read_err, read_dupe);
           mag.resetErrorCounters();
           continue;
         }
@@ -707,7 +740,8 @@ void PositionEstimator_SensorTask(void *pvParameters) {
       }
     } else {
       // ---- IDLE: background sampling + schedule the next frame start ----
-      // (STATE_SYNC_LOST is never entered; IDLE is the only non-MEASURING state)
+      // (STATE_SYNC_LOST is never entered; IDLE is the only non-MEASURING
+      // state)
       if (mag.readMeasurement()) {
         float mx = mag.getFieldGaussX();
         float my = -mag.getFieldGaussY();
@@ -723,19 +757,17 @@ void PositionEstimator_SensorTask(void *pvParameters) {
 
       int64_t time_left_us = next_frame_time_us - esp_timer_get_time();
 
-      // Missed the slot entirely — snap to the next frame boundary and let
-      // the next loop iteration handle it fresh instead of juggling both the
-      // overrun and normal-schedule cases below in the same pass.
+      // Missed the slot entirely — snap to the next frame boundary
       if (time_left_us < 0) {
-        ESP_LOGE(TAG, "Frame overrun by %lld us, resyncing to next slot",
-                 (long long)-time_left_us);
-        next_frame_time_us = nextFrameBoundaryAfter(esp_timer_get_time());
+        ESP_LOGE(TAG, "OVERRUN by %lld us", (long long)-time_left_us);
+        next_frame_time_us = nextFrameBoundaryAfter(esp_timer_get_time(), 1);
         continue;
       }
 
       if (recovery_needed) {
         recovery_needed = false;
         mag.recoverDevice();
+        esp_rom_delay_us(10000); // THIS IS NECESSARY but maybe can be reduced
       }
 
       // Run set/reset once per idle period, only while there's slack before
@@ -747,12 +779,7 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         set_reset_done = true;
       }
 
-      // Re-check with fresh time — recoverDevice()/setReset() above may have
-      // taken a while and eaten into the remaining margin.
       time_left_us = next_frame_time_us - esp_timer_get_time();
-
-      // Arm a precise one-shot timer for the frame start so the first sample
-      // lands right on the sensor's ready edge
       if (!s_first_shot_pending && time_left_us <= EMAG_SAMPLE_TIME_US) {
         if (time_left_us < 0)
           time_left_us = 0;
@@ -762,10 +789,7 @@ void PositionEstimator_SensorTask(void *pvParameters) {
         current_state = STATE_MEASURING;
         s_first_shot_pending = true;
         esp_timer_start_once(s_sample_timer, time_left_us);
-        ESP_LOGD(TAG,
-                 "Starting new emag frame at %lld us, first shot in %lld us",
-                 (long long)frame_start_time_us,
-                 (long long)time_left_us);
+        esp_rom_delay_us(2000); // THIS IS NECESSARY but maybe can be reduced
       }
     }
   }

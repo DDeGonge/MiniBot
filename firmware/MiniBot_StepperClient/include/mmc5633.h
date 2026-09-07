@@ -40,7 +40,7 @@ public:
   bool enableContinuousMode();
   bool disableContinuousMode();
   void self_benchmark(uint32_t sample_count = 1000,
-                     uint32_t nominal_period_us = 1000);
+                      uint32_t nominal_period_us = 1000);
   // Benchmark results (mean period, stdev, and reference ready time)
   float getBenchmarkMeanPeriodUs() const;
   float getBenchmarkStdevUs() const;
@@ -48,7 +48,7 @@ public:
   // Nominal/sample period setter/getter
   void setNominalPeriodUs(int64_t period_us);
   int64_t getNominalPeriodUs() const;
-  
+
   bool runSelfTest(uint32_t timeout_ms = 100);
   bool setReset();
   void checkDeviceStatus();

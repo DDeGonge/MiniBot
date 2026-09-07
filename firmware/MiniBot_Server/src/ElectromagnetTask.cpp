@@ -1,6 +1,6 @@
 #include "ElectromagnetTask.h"
-#include <esp_timer.h>
 #include "MCP23S17.h"
+#include <esp_timer.h>
 
 // Task handle
 TaskHandle_t emagTaskHandle = NULL;
@@ -13,7 +13,8 @@ static Electromagnet EMAGNETS[EMAG_COUNT];
 static unsigned int expanderOutputCache = 0;
 
 Electromagnet::Electromagnet() {}
-Electromagnet::Electromagnet(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin)
+Electromagnet::Electromagnet(bool on_io_expander, uint8_t en_pin,
+                             uint8_t dir_pin)
     : en_pin(en_pin), dir_pin(dir_pin), on_io_expander(on_io_expander) {}
 
 void Electromagnet::init(bool on_io_expander, uint8_t en_pin, uint8_t dir_pin) {
@@ -61,8 +62,9 @@ bool Electromagnet::isForward() const { return forward; }
 void initElectromagnets() {
   if (EMAG_COUNT * (EMAG_FWD_ON_TIME_MS + EMAG_REV_ON_TIME_MS) >
       EMAG_FRAME_LEN_MS) {
-    Serial.println("WARNING: Electromagnet on-time exceeds frame length! Adjust "
-                  "timing parameters.");
+    Serial.println(
+        "WARNING: Electromagnet on-time exceeds frame length! Adjust "
+        "timing parameters.");
   }
 
   // Initialize IO expander and shared direction pin
@@ -75,7 +77,8 @@ void initElectromagnets() {
   for (int i = 0; i < EMAG_COUNT; i++) {
     if (EMAG_EN_ON_EXPANDER[i]) {
       // MCP library pin numbers are 1..16; our EMAG_EN_PINS are 0-based.
-      ioExpander.pinMode(EMAG_EN_PINS[i] + 1, OUTPUT); // Configure as output (1-based)
+      ioExpander.pinMode(EMAG_EN_PINS[i] + 1,
+                         OUTPUT); // Configure as output (1-based)
       expanderOutputCache &= ~(1u << EMAG_EN_PINS[i]);
     } else {
       pinMode(EMAG_EN_PINS[i], OUTPUT);

@@ -27,7 +27,7 @@ bool MMC5633NJL::begin(int sda_pin, int scl_pin, uint32_t i2c_freq) {
   if (pid != 0x10)
     return false;
 
-  if (!runSelfTest()){
+  if (!runSelfTest()) {
     ESP_LOGE(TAG, "Self test failed");
     return false;
   }
@@ -38,7 +38,7 @@ bool MMC5633NJL::begin(int sda_pin, int scl_pin, uint32_t i2c_freq) {
 bool MMC5633NJL::setReset() {
   // manual set/reset, will take ~4ms to complete
   bool reenable_continuous = _continuous_mode;
-  if (reenable_continuous){
+  if (reenable_continuous) {
     disableContinuousMode();
   }
   if (!writeRegister(REG_CTRL0, 0x08))
@@ -47,7 +47,7 @@ bool MMC5633NJL::setReset() {
   if (!writeRegister(REG_CTRL0, 0x10))
     return false;
   vTaskDelay(pdMS_TO_TICKS(1));
-  if (reenable_continuous){
+  if (reenable_continuous) {
     enableContinuousMode();
   }
   return true;
@@ -135,7 +135,7 @@ bool MMC5633NJL::disableContinuousMode() {
 }
 
 void MMC5633NJL::self_benchmark(uint32_t sample_count,
-                               uint32_t nominal_period_us) {
+                                uint32_t nominal_period_us) {
   static int64_t ready_times_us[1000] = {0};
   static int64_t intervals_us[999] = {0};
 
@@ -149,7 +149,8 @@ void MMC5633NJL::self_benchmark(uint32_t sample_count,
   }
 
   if (!enableContinuousMode()) {
-    ESP_LOGE(TAG, "Failed to enable MMC5633 continuous mode for self benchmark");
+    ESP_LOGE(TAG,
+             "Failed to enable MMC5633 continuous mode for self benchmark");
     return;
   }
 
@@ -163,9 +164,10 @@ void MMC5633NJL::self_benchmark(uint32_t sample_count,
     while (!isMeasurementReady()) {
       poll_attempts++;
       if (poll_attempts > 100000) {
-        ESP_LOGE(TAG,
-                 "Measurement %lu never became ready; last status poll at %lld us",
-                 i, esp_timer_get_time());
+        ESP_LOGE(
+            TAG,
+            "Measurement %lu never became ready; last status poll at %lld us",
+            i, esp_timer_get_time());
         disableContinuousMode();
         return;
       }
@@ -210,11 +212,13 @@ void MMC5633NJL::self_benchmark(uint32_t sample_count,
   float sample_rate_hz = 1000000.0f / mean_period_us;
 
   ESP_LOGI(TAG,
-           "MMC5633 benchmark complete: ready_times[0]=%lld us, ready_times[%lu]=%lld us, "
+           "MMC5633 benchmark complete: ready_times[0]=%lld us, "
+           "ready_times[%lu]=%lld us, "
            "sample rate %.6f Hz, mean period %.3f us, "
            "stdev %.3f us, max deviation from nominal %lld us",
-           ready_times_us[0], sample_count - 1, ready_times_us[sample_count - 1],
-           sample_rate_hz, mean_period_us, stdev_us, max_dev_us);
+           ready_times_us[0], sample_count - 1,
+           ready_times_us[sample_count - 1], sample_rate_hz, mean_period_us,
+           stdev_us, max_dev_us);
 
   // Store benchmark metrics for later use
   _bench_mean_period_us = mean_period_us;
@@ -224,11 +228,17 @@ void MMC5633NJL::self_benchmark(uint32_t sample_count,
   disableContinuousMode();
 }
 
-float MMC5633NJL::getBenchmarkMeanPeriodUs() const { return _bench_mean_period_us; }
+float MMC5633NJL::getBenchmarkMeanPeriodUs() const {
+  return _bench_mean_period_us;
+}
 float MMC5633NJL::getBenchmarkStdevUs() const { return _bench_stdev_us; }
-int64_t MMC5633NJL::getBenchmarkReferenceTimeUs() const { return _bench_ref_time_us; }
+int64_t MMC5633NJL::getBenchmarkReferenceTimeUs() const {
+  return _bench_ref_time_us;
+}
 
-void MMC5633NJL::setNominalPeriodUs(int64_t period_us) { _nominal_period_us = period_us; }
+void MMC5633NJL::setNominalPeriodUs(int64_t period_us) {
+  _nominal_period_us = period_us;
+}
 int64_t MMC5633NJL::getNominalPeriodUs() const { return _nominal_period_us; }
 
 bool MMC5633NJL::runSelfTest(uint32_t timeout_ms) {
@@ -331,7 +341,7 @@ bool MMC5633NJL::recoverDevice() {
   }
   vTaskDelay(pdMS_TO_TICKS(25));
 
-  if(!setReset()) {
+  if (!setReset()) {
     ESP_LOGE(TAG, "Set/reset failed during recovery");
     return false;
   }
@@ -404,7 +414,8 @@ bool MMC5633NJL::readRegisters(uint8_t reg, uint8_t *buf, size_t len) {
   return true;
 }
 
-void MMC5633NJL::getErrorCounters(uint32_t &read_err, uint32_t &read_dupe) const {
+void MMC5633NJL::getErrorCounters(uint32_t &read_err,
+                                  uint32_t &read_dupe) const {
   read_err = read_err_count;
   read_dupe = read_dupe_count;
 }
