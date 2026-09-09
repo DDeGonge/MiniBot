@@ -30,9 +30,13 @@ static void waitUntilUs(int64_t targetUs) {
 // (nextFrameStartUs) as the shared anchor for the CMD_WINDOW_PERIOD_MS grid.
 static uint32_t getTimeToNextWindowUs() {
   const int64_t periodUs = (int64_t)CMD_WINDOW_PERIOD_MS * 1000LL;
+  const int64_t windowLenUs = (int64_t)CMD_WINDOW_LEN_MS * 1000LL;
   int64_t phase = (esp_timer_get_time() - nextFrameStartUs) % periodUs;
   if (phase < 0) {
     phase += periodUs;
+  }
+  if (phase < windowLenUs) {
+    return 0; // already inside the RX window
   }
   return (uint32_t)(periodUs - phase);
 }

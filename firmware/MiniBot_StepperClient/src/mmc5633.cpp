@@ -38,8 +38,8 @@ bool MMC5633NJL::begin(int sda_pin, int scl_pin, uint32_t i2c_freq) {
 bool MMC5633NJL::setReset() {
   // manual set/reset, will take ~4ms to complete
   bool reenable_continuous = _continuous_mode;
-  if (reenable_continuous) {
-    disableContinuousMode();
+  if (reenable_continuous && !disableContinuousMode()) {
+    return false;
   }
   if (!writeRegister(REG_CTRL0, 0x08))
     return false;
@@ -47,8 +47,8 @@ bool MMC5633NJL::setReset() {
   if (!writeRegister(REG_CTRL0, 0x10))
     return false;
   vTaskDelay(pdMS_TO_TICKS(1));
-  if (reenable_continuous) {
-    enableContinuousMode();
+  if (reenable_continuous && !enableContinuousMode()) {
+    return false;
   }
   return true;
 }

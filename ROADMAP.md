@@ -21,8 +21,7 @@ Next rev
 - Move pogo pin contacts to board edge
 - Remove old pogo pin pads
 
-### Server Motherboard
-- Nothing, is perfect!
+- No changes planned.
 
 ### Charge Case Board
 - Finalize pogo pin charge layout and method, big TBD

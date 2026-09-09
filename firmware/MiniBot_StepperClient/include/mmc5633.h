@@ -32,7 +32,7 @@ public:
   MMC5633NJL(TwoWire &wire = Wire);
 
   bool begin(int sda_pin = -1, int scl_pin = -1, uint32_t i2c_freq = 400000);
-  bool configure();
+  // bool configure(); // TODO: implement or remove
   bool triggerMeasurement();
   bool readMeasurementData();
   bool readMeasurement(uint32_t timeout_ms = 20);
