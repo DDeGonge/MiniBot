@@ -25,21 +25,33 @@
 #define POS_SYNC_BURST_COUNT 30      // Number of sync pulses in burst
 #define POS_SYNC_BURST_INTERVAL_MS 3 // Interval between burst pulses
 
+// Bots only listen for ESP-NOW commands during a short window each period,
+// anchored to the PosSync epoch (nextFrameStartUs). ESPNowTask grabs elevated
+// priority just before the window opens so its broadcast can't be preempted.
+#define ESPNOW_TASK_PRIORITY 3 // Normal task priority (see main.cpp)
+#define ESPNOW_TASK_WINDOW_PRIORITY                                            \
+  5                             // Elevated priority held during the TX window
+#define CMD_WINDOW_PERIOD_MS 40 // Period between bot RX windows
+#define CMD_WINDOW_LEN_MS 4     // Duration of each bot RX window
+#define CMD_WINDOW_PRIORITY_LEAD_MS                                            \
+  1 // How long before the window to raise priority
+
 // Shared GPIO pin for electromagnet direction
 const uint8_t EMAG_DIR_PIN = 32;
 const bool flip_emag_direction = true;
 
-// Per-electromagnet enable pin numbers. If on IO expander, Port A is 0-7, B is 8-15
+// Per-electromagnet enable pin numbers. If on IO expander, Port A is 0-7, B is
+// 8-15
 const uint8_t EMAG_EN_PINS[EMAG_COUNT] = {
-  2,  // EMAG 1: native GPIO 2
-  0,  // EMAG 2: expander pin 0
-  1,  // EMAG 3: expander pin 1
+    2, // EMAG 1: native GPIO 2
+    0, // EMAG 2: expander pin 0
+    1, // EMAG 3: expander pin 1
 };
 
 const bool EMAG_EN_ON_EXPANDER[EMAG_COUNT] = {
-  false,
-  true,
-  true,
+    false,
+    true,
+    true,
 };
 
 // ============= Joystick Configuration =============

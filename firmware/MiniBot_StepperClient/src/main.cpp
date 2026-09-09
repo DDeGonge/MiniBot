@@ -80,7 +80,7 @@ static bool create_tasks(void) {
   ESP_LOGI(TAG, "Position Estimator Sensor task created successfully");
 
   task_created = xTaskCreate(
-      PositionEstimator_CalcTask, "PositionEstimatorCalc", 4096, (void *)&robot,
+      PositionEstimator_CalcTask, "PositionEstimatorCalc", 8192, (void *)&robot,
       POSITION_EST_CALC_PRIORITY, &position_estimator_calc_task_handle);
   if (task_created != pdPASS) {
     ESP_LOGE(TAG, "Failed to create Position Estimator Calc task");

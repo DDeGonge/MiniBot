@@ -15,6 +15,45 @@ static QueueHandle_t ackQueue = NULL;
 static QueueHandle_t nackQueue = NULL;
 static QueueHandle_t magFieldQueue = NULL;
 
+// Wait for an absolute esp_timer_get_time() target (µs). Sleeps for the bulk
+// of the wait, then busy-waits the final ~1ms for precision.
+static void waitUntilUs(int64_t targetUs) {
+  int64_t sleepMs = (targetUs - esp_timer_get_time()) / 1000LL - 1;
+  if (sleepMs > 0) {
+    vTaskDelay(pdMS_TO_TICKS((uint32_t)sleepMs));
+  }
+  while (esp_timer_get_time() < targetUs) {
+  }
+}
+
+// Microseconds until the next bot RX window, using the PosSync epoch
+// (nextFrameStartUs) as the shared anchor for the CMD_WINDOW_PERIOD_MS grid.
+static uint32_t getTimeToNextWindowUs() {
+  const int64_t periodUs = (int64_t)CMD_WINDOW_PERIOD_MS * 1000LL;
+  const int64_t windowLenUs = (int64_t)CMD_WINDOW_LEN_MS * 1000LL;
+  int64_t phase = (esp_timer_get_time() - nextFrameStartUs) % periodUs;
+  if (phase < 0) {
+    phase += periodUs;
+  }
+  if (phase < windowLenUs) {
+    return 0; // already inside the RX window
+  }
+  return (uint32_t)(periodUs - phase);
+}
+
+// Grab elevated priority CMD_WINDOW_PRIORITY_LEAD_MS before the next window,
+// then block until the window actually opens.
+static void beginTxWindow() {
+  int64_t windowStartUs =
+      esp_timer_get_time() + (int64_t)getTimeToNextWindowUs();
+  waitUntilUs(windowStartUs - (int64_t)CMD_WINDOW_PRIORITY_LEAD_MS * 1000LL);
+  vTaskPrioritySet(NULL, ESPNOW_TASK_WINDOW_PRIORITY);
+  waitUntilUs(windowStartUs);
+}
+
+// Drop back to normal priority once the broadcast has been sent.
+static void endTxWindow() { vTaskPrioritySet(NULL, ESPNOW_TASK_PRIORITY); }
+
 // ESP-NOW callback when data is sent
 void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   DEBUG_PRINTLN("Broadcast Send Status: ");
@@ -168,9 +207,11 @@ void espNowTask(void *parameter) {
         DEBUG_PRINTF("Sending MotTestCommand to 0x%02X: M0=%d, M1=%d\n",
                      motCmd->targetID, motCmd->m0_vel, motCmd->m1_vel);
 
-        // Send broadcast
+        // Send broadcast (only inside the bot RX window)
+        beginTxWindow();
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)motCmd,
                                         sizeof(MotTestCommand));
+        endTxWindow();
 
         if (result == ESP_OK) {
           DEBUG_PRINTLN("MotTestCommand broadcast sent");
@@ -197,9 +238,11 @@ void espNowTask(void *parameter) {
             // Clear queue
           }
 
-          // Send broadcast
+          // Send broadcast (only inside the bot RX window)
+          beginTxWindow();
           esp_err_t result =
               esp_now_send(broadcastAddress, (uint8_t *)&req, sizeof(req));
+          endTxWindow();
 
           if (result == ESP_OK) {
             DEBUG_PRINTLN("Position request broadcast sent");
@@ -279,9 +322,11 @@ void espNowTask(void *parameter) {
             // Clear queue
           }
 
-          // Send broadcast
+          // Send broadcast (only inside the bot RX window)
+          beginTxWindow();
           esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&magReq,
                                           sizeof(magReq));
+          endTxWindow();
 
           if (result == ESP_OK) {
             DEBUG_PRINTLN("Magnetic field request broadcast sent");
@@ -385,9 +430,11 @@ void espNowTask(void *parameter) {
             // Clear queue
           }
 
-          // Send broadcast
+          // Send broadcast (only inside the bot RX window)
+          beginTxWindow();
           esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&posCmd,
                                           sizeof(posCmd));
+          endTxWindow();
 
           if (result == ESP_OK) {
             DEBUG_PRINTLN("Position command broadcast sent");
@@ -453,8 +500,12 @@ void espNowTask(void *parameter) {
         while (xQueueReceive(nackQueue, &tempNack, 0) == pdPASS) {
         }
 
+        // The sync sequence must begin inside the bot RX window; the burst
+        // pulses that follow are unwindowed and may land anywhere.
+        beginTxWindow();
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&syncCmd,
                                         sizeof(syncCmd));
+        endTxWindow();
         if (result != ESP_OK) {
           DEBUG_PRINTF("PosSyncCommand send failed: %d\n", result);
           break;

@@ -80,13 +80,13 @@ void setup() {
   );
 #endif
 
-  xTaskCreatePinnedToCore(espNowTask,        // Task function
-                          "ESP-NOW Task",    // Task name
-                          4096,              // Stack size (bytes)
-                          NULL,              // Parameter
-                          3,                 // Priority
-                          &espNowTaskHandle, // Task handle
-                          0                  // Core (0 or 1)
+  xTaskCreatePinnedToCore(espNowTask,           // Task function
+                          "ESP-NOW Task",       // Task name
+                          4096,                 // Stack size (bytes)
+                          NULL,                 // Parameter
+                          ESPNOW_TASK_PRIORITY, // Priority
+                          &espNowTaskHandle,    // Task handle
+                          0                     // Core (0 or 1)
   );
 
   xTaskCreatePinnedToCore(electromagnetTask, // Task function
