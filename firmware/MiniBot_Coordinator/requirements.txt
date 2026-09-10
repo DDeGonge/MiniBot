@@ -1,0 +1,3 @@
+pyqt6
+pyserial
+python-chess

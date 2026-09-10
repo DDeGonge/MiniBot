@@ -55,6 +55,7 @@ from gui.tabs.debug_tab import DebugTab
 from gui.tabs.system_control_tab import SystemControlTab
 from gui.tabs.position_tracker_tab import PositionTrackerTab
 from gui.tabs.command_looper_tab import CommandLooperTab
+from gui.tabs.play_chess_tab import PlayChessTab
 
 # ---------------------------------------------------------------------------
 # Application-wide dark theme stylesheet
@@ -418,8 +419,10 @@ class MainWindow(QMainWindow):
         self._sys_tab = SystemControlTab(self)
         self._track_tab = PositionTrackerTab(self._board, self)
         self._looper_tab = CommandLooperTab(self)
+        self._chess_tab = PlayChessTab(self._board, self._board_widget, self)
 
         self._tabs.addTab(self._path_tab, "Path Planning")
+        self._tabs.addTab(self._chess_tab, "Play Chess")
         self._tabs.addTab(self._debug_tab, "Debug")
         self._tabs.addTab(self._sys_tab, "System Control")
         self._tabs.addTab(self._track_tab, "Position Tracker")
@@ -441,6 +444,12 @@ class MainWindow(QMainWindow):
 
         # Path planning → send (serial or sim depending on mode)
         self._path_tab.send_commands.connect(self._on_send_move_commands)
+
+        # Play Chess: board square clicks route here in chess mode; moves dispatch
+        # through the same handler so they animate with the selected planner.
+        self._board_widget.square_clicked.connect(self._chess_tab.on_square_clicked)
+        self._chess_tab.send_commands.connect(self._on_send_move_commands)
+        self._chess_tab.status_log.connect(self._debug_tab.on_sim_log)
 
         # Path planning → board visualization
         self._path_tab.plan_visualized.connect(self._on_plan_visualized)
@@ -545,19 +554,57 @@ class MainWindow(QMainWindow):
         else:
             self._send_serial_move(cmd)
 
-    @pyqtSlot(list)
-    def _on_send_move_commands(self, commands: List[MoveCommand]) -> None:
-        """Dispatch commands in sequence-number waves.
+    @pyqtSlot(list, bool)
+    def _on_send_move_commands(
+        self, commands: List[MoveCommand], is_trajectory: bool = False
+    ) -> None:
+        """Dispatch commands to the simulator or serial link.
 
-        All commands sharing the same sequence_num are sent in parallel as one
-        wave. Later waves are delayed until the active wave is considered done.
+        A continuous-trajectory plan in simulator mode is played back smoothly
+        (all pieces advance in lockstep). Everything else uses the sequence-number
+        wave dispatcher: commands sharing a sequence_num go out together, and later
+        waves wait for the active wave to finish.
         """
         if not commands:
             return
 
         self._reset_wave_dispatch()
+        if is_trajectory and self._sim_mode:
+            self._play_trajectory_sim(commands)
+            return
         self._pending_waves = self._group_by_sequence(commands)
         self._dispatch_next_wave()
+
+    def _play_trajectory_sim(self, commands: List[MoveCommand]) -> None:
+        """Reconstruct per-piece time-synced paths and play them continuously.
+
+        Each piece's path is its start position followed by, for every wave, the
+        target it was commanded that wave or (forward-filled) its previous
+        position. The final heading is the last non-None target_theta commanded.
+        """
+        self._simulator.speed_mm_s = self._debug_tab.simulator_speed_mm_s
+        waves: Dict[int, Dict[int, MoveCommand]] = {}
+        for cmd in commands:
+            waves.setdefault(cmd.sequence_num, {})[cmd.piece_id] = cmd
+        wave_nums = sorted(waves)
+        piece_ids = {cmd.piece_id for cmd in commands}
+
+        paths: Dict[int, List[Tuple[float, float]]] = {}
+        final_theta: Dict[int, float] = {}
+        for pid in piece_ids:
+            piece = self._board.get_piece(pid)
+            prev = (piece.x_mm, piece.y_mm) if piece is not None else (0.0, 0.0)
+            seq = [prev]
+            for wnum in wave_nums:
+                cmd = waves[wnum].get(pid)
+                if cmd is not None:
+                    prev = (cmd.target_x_mm, cmd.target_y_mm)
+                    if cmd.target_theta is not None:
+                        final_theta[pid] = cmd.target_theta
+                seq.append(prev)
+            paths[pid] = seq
+
+        self._simulator.play_trajectory(paths, final_theta)
 
     @pyqtSlot(bytes)
     def _on_debug_send_raw(self, data: bytes) -> None:

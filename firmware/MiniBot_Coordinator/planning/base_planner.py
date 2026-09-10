@@ -75,6 +75,16 @@ class BasePlanner(ABC):
         """Human-readable planner name shown in the GUI dropdown."""
         return self.__class__.__name__
 
+    @property
+    def produces_trajectory(self) -> bool:
+        """True if plan_moves emits a fine, time-synchronized continuous path.
+
+        Such planners can be played back smoothly (all pieces advance in lockstep
+        along a shared time cursor) instead of the discrete wave-barrier dispatch.
+        Defaults to False so existing discrete planners are unaffected.
+        """
+        return False
+
     @abstractmethod
     def plan_moves(
         self,

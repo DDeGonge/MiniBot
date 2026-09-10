@@ -97,7 +97,7 @@ class PathPlanningTab(QWidget):
         plan_visualized(list, dict)        — emitted after planning to update board arrows
     """
 
-    send_commands = pyqtSignal(list)  # list[MoveCommand]
+    send_commands = pyqtSignal(list, bool)  # list[MoveCommand], is_trajectory
     plan_visualized = pyqtSignal(list, dict)  # commands, initial_positions
     planning_log = pyqtSignal(str)  # debug message → debug tab log
 
@@ -107,6 +107,9 @@ class PathPlanningTab(QWidget):
         super().__init__(parent)
         self._board = board_state
         self._move_queue: List[MoveCommand] = []
+        # True only while every queued plan came from a continuous-trajectory
+        # planner, so the coordinator can play it back smoothly.
+        self._queue_is_trajectory: bool = False
         self._selected_id: Optional[int] = None  # from chessboard click
         self._viz_enabled: bool = True
         # Snapshot of positions at the time the last plan was generated
@@ -304,9 +307,11 @@ class PathPlanningTab(QWidget):
         if piece is None:
             return
 
-        from planning.enhanced_conflict_planner import EnhancedConflictPlanner
-
-        planner = EnhancedConflictPlanner()
+        planner = self._get_planner()
+        # A single manual move must move the exact piece the user clicked, so turn
+        # off same-type interchangeable reassignment for this plan if supported.
+        if hasattr(planner, "interchangeable"):
+            planner.interchangeable = False
         positions = {p.piece_id: (p.x_mm, p.y_mm) for p in self._board.active_pieces()}
         # All bystanders return to their current position; target piece gets its new goal.
         targets = dict(positions)
@@ -318,7 +323,8 @@ class PathPlanningTab(QWidget):
 
         self._viz_positions = {}  # fresh snapshot for new plan
         commands = planner.plan_moves(positions, targets, validator=_validator)
-        self._enqueue(commands, snap_positions=dict(positions))
+        self._enqueue(commands, snap_positions=dict(positions),
+                      trajectory=planner.produces_trajectory)
 
     def _on_return_home(self) -> None:
         from config import PIECES as P, PLANNING as PL
@@ -341,7 +347,8 @@ class PathPlanningTab(QWidget):
         for cmd in commands:
             cmd.duration_ms = PL.HOME_MOVE_DURATION_MS
         self._viz_positions = {}  # fresh snapshot for new plan
-        self._enqueue(commands, snap_positions=dict(positions))
+        self._enqueue(commands, snap_positions=dict(positions),
+                      trajectory=planner.produces_trajectory)
 
     def _on_return_graveyard(self) -> None:
         from config import PIECES as P, PLANNING as PL
@@ -364,7 +371,8 @@ class PathPlanningTab(QWidget):
         for cmd in commands:
             cmd.duration_ms = PL.HOME_MOVE_DURATION_MS
         self._viz_positions = {}  # fresh snapshot for new plan
-        self._enqueue(commands, snap_positions=dict(positions))
+        self._enqueue(commands, snap_positions=dict(positions),
+                      trajectory=planner.produces_trajectory)
 
     def _on_fen_positions(self) -> None:
         from config import PIECES as P, PLANNING as PL
@@ -437,6 +445,7 @@ class PathPlanningTab(QWidget):
 
     def _on_clear_queue(self) -> None:
         self._move_queue.clear()
+        self._queue_is_trajectory = False
         self._queue_list.clear()
         self.plan_visualized.emit([], {})
 
@@ -452,7 +461,7 @@ class PathPlanningTab(QWidget):
 
     def _on_send(self) -> None:
         if self._move_queue:
-            self.send_commands.emit(list(self._move_queue))
+            self.send_commands.emit(list(self._move_queue), self._queue_is_trajectory)
             self._on_clear_queue()
 
     # ------------------------------------------------------------------
@@ -498,6 +507,17 @@ class PathPlanningTab(QWidget):
         can display them.
         """
         from config import PIECES
+
+        # Trajectory planners (e.g. Swarm) already choose the optimal
+        # interchangeable assignment internally and score it on their own motion,
+        # not EnhancedConflictPlanner's. The exhaustive ECP-based search is both
+        # redundant and incompatible with their plan_moves signature, so defer.
+        if getattr(planner, "produces_trajectory", False):
+            self.planning_log.emit(
+                "[AssignOpt] Planner optimizes assignment internally — "
+                "running its plan directly."
+            )
+            return planner.plan_moves(positions, targets)
 
         # ---- Build interchangeable groups --------------------------------
         groups: Dict[tuple, List[int]] = {}
@@ -621,6 +641,7 @@ class PathPlanningTab(QWidget):
         self,
         commands: List[MoveCommand],
         snap_positions: Optional[Dict[int, Tuple[float, float]]] = None,
+        trajectory: bool = False,
     ) -> None:
         if snap_positions and not self._viz_positions:
             self._viz_positions = dict(snap_positions)
@@ -629,6 +650,10 @@ class PathPlanningTab(QWidget):
             for pid, pos in snap_positions.items():
                 if pid not in self._viz_positions:
                     self._viz_positions[pid] = pos
+        # The queue is a trajectory only if every plan added to it is one.
+        self._queue_is_trajectory = (
+            trajectory if not self._move_queue else self._queue_is_trajectory and trajectory
+        )
         self._move_queue.extend(commands)
         for cmd in commands:
             label = (

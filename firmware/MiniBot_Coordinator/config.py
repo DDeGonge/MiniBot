@@ -9,9 +9,20 @@ import math
 # BOARD — physical geometry (all units in mm unless noted)
 # ---------------------------------------------------------------------------
 class BOARD:
-    SQUARE_SIZE_MM = 50  # one chess square side length
+    # Square size = 2.25 in (57.15 mm), the FIDE/USCF regulation tournament square.
+    # This is a deliberate step up from a tighter 50 mm square, for two reasons:
+    #   1. Standard tournament sizing (real 2.25 in boards and pieces).
+    #   2. Collision-free motion headroom. A MiniBot is ~31 mm across, so at 50 mm
+    #      the gap between piece bodies on adjacent squares is only ~19 mm; the
+    #      buffered-Voronoi routing in the swarm planner then has almost no room to
+    #      slip a piece past its neighbours and deadlocks/detours far more often.
+    #      At 57.15 mm the gap grows to ~26 mm, which is what lets the planner keep
+    #      resets and dense piece shuffles collision-free and efficient. Measured
+    #      on scattered-reset benchmarks the larger square markedly improves
+    #      completion and reduces total travel. See planning/swarm/README.md.
+    SQUARE_SIZE_MM = 57.15  # one chess square side length (2.25 in tournament size)
     NUM_SQUARES = 8  # 8×8 board
-    PLAYING_AREA_MM = SQUARE_SIZE_MM * NUM_SQUARES  # 400 mm
+    PLAYING_AREA_MM = SQUARE_SIZE_MM * NUM_SQUARES  # 457.2 mm
 
     BORDER_TOP_MM = 10
     BORDER_BOTTOM_MM = 10
@@ -19,8 +30,8 @@ class BOARD:
     BORDER_RIGHT_MM = 100
 
     # Total canvas in mm (logical coordinate space)
-    CANVAS_WIDTH_MM = PLAYING_AREA_MM + BORDER_LEFT_MM + BORDER_RIGHT_MM  # 650
-    CANVAS_HEIGHT_MM = PLAYING_AREA_MM + BORDER_TOP_MM + BORDER_BOTTOM_MM  # 450
+    CANVAS_WIDTH_MM = PLAYING_AREA_MM + BORDER_LEFT_MM + BORDER_RIGHT_MM  # 657.2
+    CANVAS_HEIGHT_MM = PLAYING_AREA_MM + BORDER_TOP_MM + BORDER_BOTTOM_MM  # 477.2
 
     # Coordinate origin: (0,0) = bottom-left corner of the playing area
     # X increases → right, Y increases → up (standard math orientation)
@@ -62,7 +73,7 @@ class PIECES:
     # Origin (0,0) is bottom-left corner of the PLAYING AREA.
     # Squares are labeled a-h (columns, x) and 1-8 (rows, y).
     # Square center col c, row r  →  x = (c-0.5)*SQUARE_SIZE, y = (r-0.5)*SQUARE_SIZE
-    _S = 50  # shorthand for SQUARE_SIZE_MM
+    _S = BOARD.SQUARE_SIZE_MM  # shorthand; tracks BOARD so the two never drift
 
     # White pieces (IDs 0x01–0x11)
     # Standard back rank: R  N  B  Q  K  B  N  R  (cols 1–8)
@@ -299,6 +310,7 @@ class PLANNING:
             "planning.enhanced_conflict_planner",
             "EnhancedConflictPlanner",
         ),
+        "Swarm (PIBT+LNS)": ("planning.swarm_planner", "SwarmPlanner"),
         "Direct (debug only)": ("planning.direct_planner", "DirectPlanner"),
     }
 

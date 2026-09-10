@@ -36,6 +36,13 @@ from config import PIECES, SIMULATOR
 from models.piece import BoardState
 from planning.base_planner import MoveCommand
 
+# Trajectory playback: advance the global time cursor by at most this many time
+# slices per tick, so no waypoint is skipped and the collision-free lockstep is
+# preserved. Segments shorter than _MIN_SEGMENT_MM carry no meaningful heading.
+_MAX_CURSOR_ADVANCE = 1.0
+_MIN_SEGMENT_MM = 0.5
+_FINAL_HEADING_TOL_DEG = 0.5
+
 
 class MotionSimulator(QObject):
     """Simulates robot motion for all active MoveCommands.
@@ -66,6 +73,15 @@ class MotionSimulator(QObject):
         self._rotate_to: Dict[int, float] = {}  # piece_id → chosen heading (deg)
 
         self._collision_enabled: bool = True
+
+        # Time-synchronized trajectory playback (used for planners that emit a
+        # continuous, collision-free-by-construction path). When active, this
+        # takes over the tick and the per-command logic above is bypassed.
+        self._trajectory: Optional[Dict[int, List[Tuple[float, float]]]] = None
+        self._traj_len: int = 0
+        self._traj_cursor: float = 0.0
+        self._traj_final_theta: Dict[int, float] = {}
+        self._traj_finalizing: bool = False
 
         self._timer = QTimer(self)
         self._timer.setInterval(SIMULATOR.UPDATE_INTERVAL_MS)
@@ -105,11 +121,41 @@ class MotionSimulator(QObject):
         if self._active and not self._timer.isActive():
             self._timer.start()
 
+    def play_trajectory(
+        self,
+        paths: Dict[int, List[Tuple[float, float]]],
+        final_theta: Dict[int, float],
+    ) -> None:
+        """Play a time-synchronized, collision-free trajectory continuously.
+
+        paths[pid] is that piece's position at each of L identical-length time
+        slices (a stopped piece repeats its last position); final_theta[pid] is
+        the heading in degrees to face once playback ends. Every piece advances in
+        lockstep along a single global cursor, so the collision-free spacing the
+        planner guarantees at each slice is preserved between slices too. This
+        replaces the discrete rotate-then-translate, wave-barrier motion so a
+        continuous planner's arcs render smoothly.
+        """
+        if not paths:
+            return
+        self._active.clear()
+        self._phase.clear()
+        self._rotate_to.clear()
+        self._trajectory = {pid: list(pts) for pid, pts in paths.items()}
+        self._traj_len = max(len(pts) for pts in self._trajectory.values())
+        self._traj_final_theta = dict(final_theta)
+        self._traj_cursor = 0.0
+        self._traj_finalizing = False
+        if not self._timer.isActive():
+            self._timer.start()
+
     def stop_all(self) -> None:
         """Cancel all active moves and stop the timer."""
         self._active.clear()
         self._phase.clear()
         self._rotate_to.clear()
+        self._trajectory = None
+        self._traj_final_theta = {}
         self._timer.stop()
 
     @property
@@ -130,6 +176,13 @@ class MotionSimulator(QObject):
 
     @pyqtSlot()
     def _tick(self) -> None:
+        # Continuous trajectory playback takes over the tick when active; the
+        # per-command rotate/translate logic below is left intact for the
+        # coordinator's other (discrete) planners.
+        if self._trajectory is not None:
+            self._tick_trajectory()
+            return
+
         dt = SIMULATOR.UPDATE_INTERVAL_MS / 1000.0
         step = self._speed * dt
         rot_step = SIMULATOR.ROTATION_SPEED_DEG_S * dt
@@ -199,9 +252,25 @@ class MotionSimulator(QObject):
 
                 if dist <= step:
                     new_x, new_y = cmd.target_x_mm, cmd.target_y_mm
+                    if cmd.target_theta is not None:
+                        # Position reached; correct to the commanded final heading.
+                        self._phase[pid] = "final_rotate"
                 else:
                     new_x = cur_x + (dx / dist) * step
                     new_y = cur_y + (dy / dist) * step
+
+            # ── Phase 3: Rotate in place to the commanded final heading ──
+            elif phase == "final_rotate":
+                new_x, new_y = cur_x, cur_y
+                heading_diff = (
+                    cmd.target_theta - piece.orientation_deg + 180.0
+                ) % 360.0 - 180.0
+                if abs(heading_diff) <= rot_step:
+                    new_theta = cmd.target_theta % 360.0
+                else:
+                    new_theta = (
+                        piece.orientation_deg + math.copysign(rot_step, heading_diff)
+                    ) % 360.0
 
             # ── 1. Boundary enforcement (clamp to table limits) ──────────
             clamped_x = max(self._x_min, min(self._x_max, new_x))
@@ -229,13 +298,20 @@ class MotionSimulator(QObject):
                 new_x, new_y = cur_x, cur_y
 
             # ── Arrival check ─────────────────────────────────────────────
-            # Arrived when translate phase completes (position reached).
-            pos_done = (
-                self._phase.get(pid) == "translate"
-                and math.hypot(new_x - cmd.target_x_mm, new_y - cmd.target_y_mm) <= 0.5
+            # Arrived once the target position is reached, and (when a final
+            # heading was commanded) the piece has also turned to face it.
+            ph = self._phase.get(pid)
+            pos_reached = (
+                math.hypot(new_x - cmd.target_x_mm, new_y - cmd.target_y_mm) <= 0.5
             )
-            if pos_done:
+            if ph == "translate" and pos_reached and cmd.target_theta is None:
                 arrived_ids.append(pid)
+            elif ph == "final_rotate":
+                heading_reached = (
+                    abs((cmd.target_theta - new_theta + 180.0) % 360.0 - 180.0) <= 0.5
+                )
+                if pos_reached and heading_reached:
+                    arrived_ids.append(pid)
 
             # ── Commit to board state and emit ───────────────────────────
             self._board.update_piece_position(pid, new_x, new_y, new_theta)
@@ -251,3 +327,86 @@ class MotionSimulator(QObject):
 
         if not self._active:
             self._timer.stop()
+
+    def _tick_trajectory(self) -> None:
+        """Advance one continuous-playback tick along the global time cursor.
+
+        Every piece moves in lockstep: the cursor advances so the fastest piece
+        travels at ~speed mm/s (capped so no time slice is skipped), and each
+        piece is linear-interpolated along its own segment and faces its travel
+        direction. Once the cursor reaches the last slice, pieces hold on their
+        final square and turn in place to the commanded heading, then playback
+        ends with a move_complete for every piece.
+        """
+        dt = SIMULATOR.UPDATE_INTERVAL_MS / 1000.0
+        rot_step = SIMULATOR.ROTATION_SPEED_DEG_S * dt
+        paths = self._trajectory
+        last = self._traj_len - 1
+
+        if not self._traj_finalizing:
+            # A tick advances the cursor by at most one slice, so it can touch the
+            # current segment and the next; size the step from the longer of the
+            # two so no piece moves more than `step` this tick.
+            i = min(int(self._traj_cursor), last)
+            b = min(i + 1, last)
+            d = min(i + 2, last)
+            seg_max = 0.0
+            for pts in paths.values():
+                seg_max = max(
+                    seg_max,
+                    math.hypot(pts[b][0] - pts[i][0], pts[b][1] - pts[i][1]),
+                    math.hypot(pts[d][0] - pts[b][0], pts[d][1] - pts[b][1]),
+                )
+            step = self._speed * dt
+            advance = _MAX_CURSOR_ADVANCE if seg_max <= _MIN_SEGMENT_MM else step / seg_max
+            self._traj_cursor += min(advance, _MAX_CURSOR_ADVANCE)
+            if self._traj_cursor >= last:
+                self._traj_cursor = float(last)
+                self._traj_finalizing = True
+
+            c = self._traj_cursor
+            i = min(int(c), last)
+            frac = c - i
+            i2 = min(i + 1, last)
+            for pid, pts in paths.items():
+                ax, ay = pts[i]
+                bx, by = pts[i2]
+                nx = max(self._x_min, min(self._x_max, ax + (bx - ax) * frac))
+                ny = max(self._y_min, min(self._y_max, ay + (by - ay) * frac))
+                sdx, sdy = bx - ax, by - ay
+                if math.hypot(sdx, sdy) > _MIN_SEGMENT_MM:
+                    theta = math.degrees(math.atan2(sdy, sdx)) % 360.0
+                else:
+                    piece = self._board.get_piece(pid)
+                    theta = piece.orientation_deg if piece is not None else 0.0
+                self._board.update_piece_position(pid, nx, ny, theta)
+                self.position_updated.emit(pid, nx, ny, theta, 0.0)
+            return
+
+        # Finalizing: hold on the last waypoint, turn in place to the final heading.
+        all_aligned = True
+        for pid, pts in paths.items():
+            fx, fy = pts[last]
+            piece = self._board.get_piece(pid)
+            cur_theta = piece.orientation_deg if piece is not None else 0.0
+            tgt = self._traj_final_theta.get(pid)
+            if tgt is None:
+                theta = cur_theta
+            else:
+                diff = (tgt - cur_theta + 180.0) % 360.0 - 180.0
+                if abs(diff) <= max(rot_step, _FINAL_HEADING_TOL_DEG):
+                    theta = tgt % 360.0
+                else:
+                    theta = (cur_theta + math.copysign(rot_step, diff)) % 360.0
+                    all_aligned = False
+            self._board.update_piece_position(pid, fx, fy, theta)
+            self.position_updated.emit(pid, fx, fy, theta, 0.0)
+
+        if all_aligned:
+            ids = list(paths.keys())
+            self._trajectory = None
+            self._traj_final_theta = {}
+            self._timer.stop()
+            for pid in ids:
+                self.move_complete.emit(pid)
+            self.log_message.emit("SIM: trajectory playback complete")
