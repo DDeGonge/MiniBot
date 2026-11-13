@@ -23,7 +23,7 @@ import serial.tools.list_ports
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
 from comms.protocol import parse_line, ParsedMessage
-from config import COMM
+from config import COMM, OTA
 
 # ---------------------------------------------------------------------------
 # Worker — lives on a background QThread
@@ -50,6 +50,13 @@ class _SerialWorker(QObject):
     connection_changed = pyqtSignal(bool)  # True=connected
     worker_error = pyqtSignal(str)  # unrecoverable error msg
 
+    # OTA: upload status ("READY"/"OK"/"ERR", detail message) and per-bot result
+    ota_upload_status = pyqtSignal(str, str)
+    ota_result_received = pyqtSignal(int, bool, int, int)  # id, success, err_code, version
+
+    # Bulk transfer (e.g. OTA firmware): bytes written for one enqueue_bulk() chunk
+    chunk_sent = pyqtSignal(int)
+
     finished = pyqtSignal()
 
     def __init__(self) -> None:
@@ -58,6 +65,10 @@ class _SerialWorker(QObject):
         self._baud_rate: int = COMM.DEFAULT_BAUD_RATE
         self._running: bool = False
         self._send_queue: queue.Queue[bytes] = queue.Queue()
+        # Separate queue for large reliable transfers (e.g. OTA firmware).
+        # Never subject to the command-queue overflow/drop protection below,
+        # since dropping a chunk would corrupt the transfer.
+        self._bulk_queue: queue.Queue[bytes] = queue.Queue()
         self._serial: Optional[serial.Serial] = None
         self._rx_buf: bytes = b""  # incomplete-line carry buffer
 
@@ -72,6 +83,10 @@ class _SerialWorker(QObject):
     def enqueue(self, data: bytes) -> None:
         """Enqueue bytes to be written on the next loop iteration."""
         self._send_queue.put(data)
+
+    def enqueue_bulk(self, data: bytes) -> None:
+        """Enqueue one chunk of a large transfer (never dropped as backlog)."""
+        self._bulk_queue.put(data)
 
     # ------------------------------------------------------------------
     # Main loop (runs on background QThread)
@@ -119,6 +134,24 @@ class _SerialWorker(QObject):
                     try:
                         data = self._send_queue.get_nowait()
                         self._serial.write(data)
+                    except queue.Empty:
+                        break
+                    except serial.SerialException as exc:
+                        self.worker_error.emit(f"Write error: {exc}")
+                        self._running = False
+                        break
+
+                # --- drain bulk-transfer queue (e.g. OTA firmware chunks) ---
+                # Cap bytes written per loop iteration (not the whole queue)
+                # so a large transfer can't starve the command queue / RX
+                # processing below for its entire multi-second duration.
+                bulk_bytes_this_iter = 0
+                while bulk_bytes_this_iter < COMM.BULK_DRAIN_MAX_BYTES:
+                    try:
+                        chunk = self._bulk_queue.get_nowait()
+                        self._serial.write(chunk)
+                        self.chunk_sent.emit(len(chunk))
+                        bulk_bytes_this_iter += len(chunk)
                     except queue.Empty:
                         break
                     except serial.SerialException as exc:
@@ -211,6 +244,13 @@ class _SerialWorker(QObject):
             )
         elif msg.msg_type == COMM.RESP_PONG:
             self.pong_received.emit()
+        elif msg.msg_type == OTA.RESP_UPLOAD_STATUS:
+            self.ota_upload_status.emit(msg.ota_status or "", msg.parse_error or "")
+        elif msg.msg_type == OTA.RESP_RESULT and msg.piece_id is not None:
+            self.ota_result_received.emit(
+                msg.piece_id, bool(msg.ota_success), msg.err_type or 0,
+                msg.ota_version or 0,
+            )
         # UNKNOWN and PARSE_ERROR lines are still surfaced via raw_line_received above
 
 
@@ -235,6 +275,10 @@ class SerialHandler(QObject):
     raw_line_received = pyqtSignal(str)
     connection_changed = pyqtSignal(bool)  # True=connected
     serial_error = pyqtSignal(str)
+
+    ota_upload_status = pyqtSignal(str, str)
+    ota_result_received = pyqtSignal(int, bool, int, int)
+    chunk_sent = pyqtSignal(int)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -272,6 +316,9 @@ class SerialHandler(QObject):
         self._worker.raw_line_received.connect(self.raw_line_received)
         self._worker.worker_error.connect(self.serial_error)
         self._worker.connection_changed.connect(self._on_connection_changed)
+        self._worker.ota_upload_status.connect(self.ota_upload_status)
+        self._worker.ota_result_received.connect(self.ota_result_received)
+        self._worker.chunk_sent.connect(self.chunk_sent)
 
         # Lifecycle wiring
         self._thread.started.connect(self._worker.run)
@@ -292,6 +339,17 @@ class SerialHandler(QObject):
         """Enqueue bytes to be sent from the worker thread."""
         if self._worker and self._connected:
             self._worker.enqueue(data)
+
+    def send_chunked(self, data: bytes, chunk_size: int) -> None:
+        """Enqueue a large payload as fixed-size chunks on the bulk-transfer
+        queue, which is never dropped as backlog (unlike send()). Emits
+        chunk_sent(len(chunk)) as each chunk is actually written, so callers
+        can track upload progress.
+        """
+        if not (self._worker and self._connected):
+            return
+        for offset in range(0, len(data), chunk_size):
+            self._worker.enqueue_bulk(data[offset : offset + chunk_size])
 
     # ------------------------------------------------------------------
     # Slots

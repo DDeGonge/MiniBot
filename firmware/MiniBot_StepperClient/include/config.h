@@ -119,6 +119,20 @@
   30000 // Disable duty cycling if sync becomes stale
 
 // ============================================================================
+// OTA Firmware Update
+// ============================================================================
+// Bots join the Server's WiFi AP (same SSID/channel used for its ESP-NOW
+// gateway) to pull the staged firmware image over HTTP.
+#define OTA_WIFI_SSID "ChessBot-Server"
+#define OTA_WIFI_PASSWORD "qwertyuiop"
+#define OTA_SERVER_URL "http://192.168.4.1/firmware.bin"
+#define OTA_UPDATER_PRIORITY 2
+
+#define OTA_WIFI_CONNECT_TIMEOUT_MS 15000 // Give up joining the AP after this
+#define OTA_HTTP_TIMEOUT_MS 20000         // HTTP connect/stall timeout
+#define OTA_DOWNLOAD_CHUNK_SIZE 1024       // Bytes read per stream iteration
+
+// ============================================================================
 // Electromagnet Positioning System Configuration
 // ============================================================================
 

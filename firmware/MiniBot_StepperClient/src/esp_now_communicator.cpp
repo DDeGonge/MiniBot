@@ -1,5 +1,6 @@
 #include "esp_now_communicator.h"
 #include "device_id.h"
+#include "ota_updater.h"
 #include "position_estimator.h"
 #undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL LOG_LEVEL_ESPNOW
@@ -98,6 +99,25 @@ static void set_duty_cycle(bool enable) {
     ESP_LOGI(TAG, "Duty cycle disabled — radio always on");
   }
   duty_cycle_active = enable;
+}
+
+// OTA's WiFi.begin + WiFi.disconnect sequence resets the ESP-IDF wake window
+// and wake interval that set_duty_cycle() configured. Without this, the
+// communicator task's next set_duty_cycle() call early-returns (duty_cycle_active
+// already matches the request) and the ESP-NOW broadcast wake-up stays
+// mis-tuned for the remainder of the boot. This variant skips the short-circuit
+// and re-applies whatever state we currently think we're in.
+void EspNowCommunicator_RestoreDutyCycle() {
+  if (duty_cycle_active) {
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    esp_now_set_wake_window(ESPNOW_WAKE_WINDOW_MS * 1000);
+    esp_wifi_set_connectionless_wake_interval(ESPNOW_WAKE_INTERVAL_MS);
+    ESP_LOGI(TAG, "Duty cycle re-applied after OTA (%d ms window / %d ms interval)",
+             ESPNOW_WAKE_WINDOW_MS, ESPNOW_WAKE_INTERVAL_MS);
+  } else {
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    ESP_LOGI(TAG, "Duty cycle re-applied after OTA (radio always on)");
+  }
 }
 
 static void esp_now_recv_cb(const uint8_t *mac_addr, const uint8_t *data,
@@ -405,6 +425,19 @@ static void esp_now_message_handler(const uint8_t *mac_addr,
     break;
   }
 
+  case MSG_TYPE_OTA_COMMAND: {
+    if (len < (int)sizeof(OtaCommand)) {
+      ESP_LOGE(TAG, "OtaCommand too short");
+      send_nack_message(mac_addr, ERR_INVALID_MSG_SIZE);
+      return;
+    }
+    OtaCommand *cmd = (OtaCommand *)data;
+    ESP_LOGW(TAG, "OTA command received: version=%u size=%u crc=0x%08X",
+             cmd->fw_version, cmd->fw_size, cmd->fw_crc32);
+    OtaUpdater_OnCommandReceived(mac_addr, cmd);
+    break;
+  }
+
   default:
     send_nack_message(mac_addr, ERR_UNKNOWN_MSG);
     break;
@@ -433,6 +466,33 @@ bool EspNowCommunicator_SendAlert(uint8_t error_type) {
   }
 
   return send_nack_message(last_sender_mac, error_type);
+}
+
+bool EspNowCommunicator_SendOtaResult(const uint8_t *mac_addr,
+                                      uint8_t result_code,
+                                      uint32_t fw_version) {
+  if (mac_addr == NULL) {
+    return false;
+  }
+
+  OtaResult result = {};
+  result.responderID = getDeviceID();
+  result.msg_type = MSG_TYPE_OTA_RESULT;
+  result.timestamp = millis();
+  result.result_code = result_code;
+  result.fw_version = fw_version;
+
+  if (!ensure_peer_exists(mac_addr)) {
+    return false;
+  }
+
+  esp_err_t result_status =
+      esp_now_send(mac_addr, (uint8_t *)&result, sizeof(OtaResult));
+  if (result_status != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to send OTA result (err: %d)", result_status);
+    return false;
+  }
+  return true;
 }
 
 void EspNowCommunicator_Task(void *pvParameters) {

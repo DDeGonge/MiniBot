@@ -13,6 +13,8 @@ typedef enum {
   MSG_TYPE_MAG_FIELD_RESPONSE = 6,
   MSG_TYPE_POS_SYNC_COMMAND = 7,
   MSG_TYPE_POS_SYNC = 8,
+  MSG_TYPE_OTA_COMMAND = 9,
+  MSG_TYPE_OTA_RESULT = 10,
 } EspNowMessageType;
 
 typedef enum {
@@ -24,6 +26,16 @@ typedef enum {
   ERR_LOW_BATTERY = 5,
   ERR_SYNC_TIMEOUT = 6
 } EspNowErrorType;
+
+// Result codes reported by a bot after attempting a firmware update
+typedef enum {
+  OTA_RESULT_SUCCESS = 0,
+  OTA_RESULT_ALREADY_CURRENT = 1,
+  OTA_RESULT_WIFI_FAILED = 2,
+  OTA_RESULT_DOWNLOAD_FAILED = 3,
+  OTA_RESULT_CRC_MISMATCH = 4,
+  OTA_RESULT_FLASH_FAILED = 5,
+} OtaResultCode;
 
 typedef struct __attribute__((packed)) {
   uint8_t targetID;
@@ -94,5 +106,24 @@ typedef struct __attribute__((packed)) {
   float field_y_gauss;
   float field_z_gauss;
 } MagneticFieldResponse;
+
+// Sent server -> bot: a new firmware image is staged and ready to fetch
+typedef struct __attribute__((packed)) {
+  uint8_t targetID;
+  uint8_t msg_type;
+  uint32_t timestamp;
+  uint32_t fw_version;
+  uint32_t fw_size;
+  uint32_t fw_crc32;
+} OtaCommand;
+
+// Sent bot -> server: outcome of an OTA attempt
+typedef struct __attribute__((packed)) {
+  uint8_t responderID;
+  uint8_t msg_type;
+  uint32_t timestamp;
+  uint8_t result_code;
+  uint32_t fw_version;
+} OtaResult;
 
 #endif // __MESSAGES_ESPNOW_H__

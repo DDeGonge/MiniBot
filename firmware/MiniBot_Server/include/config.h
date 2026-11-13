@@ -85,6 +85,12 @@ const bool EMAG_EN_ON_EXPANDER[EMAG_COUNT] = {
 
 #endif // ENABLE_JOYSTICK_MODE
 
+// ============= OTA Firmware Staging (serial -> LittleFS -> bots) =============
+#define OTA_FIRMWARE_PATH "/firmware.bin"
+#define OTA_UPLOAD_CHUNK_SIZE 512   // bytes read from Serial per loop iteration
+#define OTA_UPLOAD_STALL_TIMEOUT_MS                                            \
+  5000 // abort an in-progress upload if no bytes arrive for this long
+
 #if ENABLE_DEBUG_PRINTS
 #define DEBUG_PRINTLN(x) Serial.println(x)
 #define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)

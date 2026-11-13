@@ -112,6 +112,15 @@ void LedStatus_Task(void *pvParameters) {
       vTaskDelay(pdMS_TO_TICKS(100));
       break;
 
+    case LED_STATUS_OTA_UPDATING: {
+      // Alternate full/half brightness every 500ms while flashing new firmware
+      static bool ota_high_phase = true;
+      analogWrite(led_pin, ota_high_phase ? 255 : 127);
+      ota_high_phase = !ota_high_phase;
+      vTaskDelay(pdMS_TO_TICKS(500));
+      break;
+    }
+
     default:
       analogWrite(led_pin, 0);
       vTaskDelay(pdMS_TO_TICKS(100));
