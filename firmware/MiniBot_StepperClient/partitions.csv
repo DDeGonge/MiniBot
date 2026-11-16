@@ -1,0 +1,10 @@
+# ESP32-C3-devkitm-1 partition table with a dedicated recovery/OTA app
+# partition so esp_ota_get_next_update_partition() has somewhere to write.
+# Arduino Update.h / esp_ota_ops.h flash into that second app slot; main.cpp
+# calls esp_ota_mark_app_valid_cancel_rollback() on boot to accept the new
+# image. Without this file PlatformIO falls back to the espressif32 default
+# (single "factory" app partition) and Update.begin() always fails.
+#
+# esptool.py will auto-place the two app partitions after the bootloader.
+factory,  app,  0xf0000, 18,
+recovery, app,  0xf0000, 18,

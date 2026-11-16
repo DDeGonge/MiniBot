@@ -1,6 +1,8 @@
 #include "GUITask.h"
 #include "ElectromagnetTask.h"
 #include "QueueStructs.h"
+#include "config.h"
+#include <LittleFS.h>
 
 // Web Server
 AsyncWebServer server(80);
@@ -388,6 +390,18 @@ void initGUI() {
   // Setup web server routes
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html);
+  });
+
+  // Firmware image staged via serial upload, fetched by bots during OTA.
+  // Custom handler (rather than serveStatic) so a premature request before
+  // anything has been staged gets a clean 404 instead of LittleFS logging a
+  // low-level "does not exist, no permits for creation" VFS error.
+  server.on("/firmware.bin", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!LittleFS.exists(OTA_FIRMWARE_PATH)) {
+      request->send(404, "text/plain", "no firmware staged");
+      return;
+    }
+    request->send(LittleFS, OTA_FIRMWARE_PATH, "application/octet-stream");
   });
 
   server.begin();

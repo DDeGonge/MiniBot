@@ -239,6 +239,64 @@ class COMM:
     # If the receive buffer holds more than this many bytes, discard it.
     RX_FLUSH_THRESHOLD_BYTES = 512
 
+    # Max bytes written per worker-loop iteration from the bulk-transfer
+    # queue (e.g. OTA firmware chunks). Caps latency added to the regular
+    # command queue / RX processing without needing to drain one chunk at a
+    # time (which would needlessly halve achievable throughput).
+    BULK_DRAIN_MAX_BYTES = 8192
+
+
+# ---------------------------------------------------------------------------
+# OTA — fleet firmware update protocol / rollout constants
+# ---------------------------------------------------------------------------
+class OTA:
+    # Command IDs (host → Server), local extensions on top of EspNowMessageType
+    CMD_UPLOAD_BEGIN = 200  # >200,{size},{crc32}  (then raw firmware bytes)
+    CMD_START = 201  # >201,{id},{version}
+
+    # Response IDs (Server → host)
+    RESP_UPLOAD_STATUS = 200  # >200,READY | >200,OK | >200,ERR,{message}
+    RESP_RESULT = 202  # >202,{id},{success},{err_code},{version}
+
+    # Server-side accept ack: emitted by SerialTask once a >201 OTA start has
+    # actually been queued on the Server. The Coordinator must not treat a bot
+    # as "active" merely because it wrote the >201 bytes to the UART.
+    RESP_OTA_ACCEPTED = 203  # >203,{id}
+
+    # Result codes reported by a bot (mirrors OtaResultCode in firmware)
+    RESULT_SUCCESS = 0
+    RESULT_ALREADY_CURRENT = 1
+    RESULT_WIFI_FAILED = 2
+    RESULT_DOWNLOAD_FAILED = 3
+    RESULT_CRC_MISMATCH = 4
+    RESULT_FLASH_FAILED = 5
+
+    # Negative pseudo-codes for failures the Coordinator itself generates —
+    # they never come from a bot, so they cannot collide with OtaResultCode
+    # values 0..5 above. OtaUpdateTab maps them to human-readable outcomes.
+    ERR_CODE_TIMEOUT = -1  # no >202 result within RESULT_TIMEOUT_S
+    ERR_CODE_NO_CONNECTION = -2  # serial link to the Server went down
+
+    # Number of bots updated concurrently during a fleet rollout.
+    # Start at 1 (fully sequential) until real-world OTA timing is measured.
+    MAX_PARALLEL_UPDATES = 1
+
+    # Firmware bytes per chunk when streaming to the Server (bulk queue).
+    # Only affects upload-progress granularity, not the wire format.
+    UPLOAD_CHUNK_SIZE = 2048
+
+    # How often (ms) the upload-progress UI signal is refreshed.
+    UPLOAD_PROGRESS_INTERVAL_MS = 500
+
+    # How long to wait for the Server to acknowledge the start of an upload
+    # and to finish staging the firmware to LittleFS, respectively.
+    UPLOAD_READY_TIMEOUT_S = 10.0
+    UPLOAD_COMPLETE_TIMEOUT_S = 60.0
+
+    # Per-bot timeout waiting for an OTA result once a rollout has started
+    # (covers WiFi connect + HTTP download + flash write + reboot).
+    RESULT_TIMEOUT_S = 90.0
+
 
 # ---------------------------------------------------------------------------
 # GUI — colors, fonts, window dimensions

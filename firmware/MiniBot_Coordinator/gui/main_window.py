@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
 
 from comms.protocol import build_position_request, build_position_command
 from comms.serial_handler import SerialHandler
+from comms.ota_manager import OtaManager
 from config import COMM, GUI, PIECES, PLANNING, SIMULATOR
 from models.piece import BoardState
 from planning.base_planner import MoveCommand
@@ -55,6 +56,7 @@ from gui.tabs.debug_tab import DebugTab
 from gui.tabs.system_control_tab import SystemControlTab
 from gui.tabs.position_tracker_tab import PositionTrackerTab
 from gui.tabs.command_looper_tab import CommandLooperTab
+from gui.tabs.ota_update_tab import OtaUpdateTab
 
 # ---------------------------------------------------------------------------
 # Application-wide dark theme stylesheet
@@ -295,6 +297,7 @@ class MainWindow(QMainWindow):
         self._board = BoardState()
         self._board.reset_to_home()
         self._handler = SerialHandler(self)
+        self._ota_manager = OtaManager(self._handler, self)
         self._simulator = MotionSimulator(self._board, parent=self)
         self._sim_mode = False  # True when debug tab simulator is active
 
@@ -418,12 +421,14 @@ class MainWindow(QMainWindow):
         self._sys_tab = SystemControlTab(self)
         self._track_tab = PositionTrackerTab(self._board, self)
         self._looper_tab = CommandLooperTab(self)
+        self._ota_tab = OtaUpdateTab(self._ota_manager, self._active_piece_ids, self)
 
         self._tabs.addTab(self._path_tab, "Path Planning")
         self._tabs.addTab(self._debug_tab, "Debug")
         self._tabs.addTab(self._sys_tab, "System Control")
         self._tabs.addTab(self._track_tab, "Position Tracker")
         self._tabs.addTab(self._looper_tab, "Command Looper")
+        self._tabs.addTab(self._ota_tab, "OTA Update")
 
         right_layout.addWidget(self._tabs, stretch=1)
         layout.addWidget(right_widget, stretch=0)
@@ -735,6 +740,22 @@ class MainWindow(QMainWindow):
             )
         }
         self._board_widget.set_stale_pieces(stale, self._hide_stale)
+
+    def _active_piece_ids(self) -> Set[int]:
+        """Piece IDs currently reporting fresh (non-stale) positions.
+
+        Used by the OTA Update tab to pre-check bots the first time it's shown.
+        """
+        if self._sim_mode:
+            return set()
+        now = time.monotonic()
+        return {
+            p.piece_id
+            for p in self._board.all_pieces()
+            if not p.is_captured
+            and p.piece_id in self._last_seen
+            and now - self._last_seen[p.piece_id] <= 5.0
+        }
 
     @pyqtSlot()
     def _on_poll_timer(self) -> None:
