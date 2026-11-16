@@ -38,9 +38,9 @@ CSV commands from the Coordinator over USB serial, translates them to binary ESP
 messages, and broadcasts them to the bots. It also drives the electromagnets used for
 localization and collects ACK/NACK responses back up to the Coordinator.
 
-**MiniBots** are the robots themselves. Each runs an ESP32-C3 with five concurrent
+**MiniBots** are the robots themselves. Each runs an ESP32-C3 with six concurrent
 FreeRTOS tasks handling motion control, wireless communication, position estimation,
-and battery management entirely onboard.
+battery management, and over-the-air firmware updates entirely onboard.
 
 ---
 
@@ -216,6 +216,26 @@ immediately instead of waiting out the result timeout.
 web handler, checks size and CRC-32 against the `OtaCommand`, and hands the image to the ESP OTA
 API. The version stamp sent with the command is the image CRC; each bot keeps its running version
 in NVS, so an image that bot already runs reports `ALREADY_CURRENT` and is not reflashed.
+
+**Flash layout.** Both firmware projects carry their own partition tables, and the bots are the
+ones that care. `firmware/MiniBot_StepperClient/partitions.csv` gives a bot two app slots -
+`factory` and `recovery`, both `app`, `0xF0000` (960 KiB) each, auto-placed by esptool after the
+bootloader at the `0x8000` table offset. Two slots are what let `ota_updater.cpp` call
+`Update.begin(cmd.fw_size)` with no partition index: the ESP OTA API always writes the slot that
+is not the running one, so an update never overwrites the image the fleet is currently using.
+`main.cpp` then calls `esp_ota_mark_app_valid_cancel_rollback()` at boot to accept the new image,
+and an image that fails to boot rolls back to the previous slot on the following reset instead of
+leaving the bot unusable. A staged image therefore has to fit a single 960 KiB slot - the latest
+build is 1,011,760 bytes, so re-check the sizing against the newest image. If the espressif32 core
+does not pick the csv up, the default single `factory` slot leaves nowhere to write and
+`Update.begin()` reports "partition not found"; fix it with one reflash of the layout
+(`esptool.py --partition-table=partitions.csv --partition-table-offset=0x8000 partition-table`,
+the note in `platformio.ini`). The Server needs no csv: the staged image is a LittleFS file
+(`board_build.filesystem = littlefs`), and staging is refused when the free LittleFS bytes cannot
+hold the image plus `OTA_STAGING_HEADROOM_BYTES` (2 KiB). Bots keep the running version stamp and
+the device ID in NVS, and that table has no `nvs` line while `ensure_nvs_initialized()` ignores
+init failures, so confirm NVS has a partition on hardware before trusting the `ALREADY_CURRENT`
+short-circuit.
 
 **Reporting.** The bot does not ACK the `OtaCommand`. It sends an ESP-NOW `OtaResult`, then
 reboots onto the new firmware; the Server prints the outcome back up to the Coordinator as
