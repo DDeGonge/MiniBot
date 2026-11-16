@@ -19,8 +19,9 @@ Per-bot hardware cost is approximately $4 excluding PCB.
 3. [Communication Pathways](#communication-pathways)
 4. [Server-Bot Sync](#server-bot-sync)
 5. [Localization](#localization)
-6. [PCB and CAD](#pcb-and-cad)
-7. [Firmware](#firmware)
+6. [Fleet Firmware Updates (OTA)](#fleet-firmware-updates-ota)
+7. [PCB and CAD](#pcb-and-cad)
+8. [Firmware](#firmware)
 
 ---
 
@@ -183,6 +184,55 @@ trilateration using the field strength readings from the closest electromagnets 
 their known board positions. This yields an (x, y, orientation) estimate with a
 confidence score, which is used to weight a low-pass filter before the result is
 committed to the robot's true pose via `robot.setTruePose()`.
+
+---
+
+## Fleet Firmware Updates (OTA)
+
+A firmware image is staged once on the Server and pushed out to a selected set of bots, so a
+fleet update never requires reflashing a bot by hand. The OTA tab (`gui/tabs/ota_update_tab.py`)
+owns selection and the per-bot status display; `comms/ota_manager.py` owns the wire protocol and
+the rollout schedule; LittleFS staging lives in the Server's `SerialTask`.
+
+**Staging.** The Coordinator reads the selected `.bin`, computes a CRC-32, and sends
+`>200,{size},{crc32}`. The Server drops any previously staged image, refuses the request if the
+image does not fit the free LittleFS space, and replies `>200,READY`. The Coordinator then streams
+the raw bytes onto the bulk transfer queue. The Server writes them while checksumming on the fly,
+and answers `>200,OK` only if every write was accepted in full and the file on disk has both the
+expected length and the expected checksum. Any other outcome aborts the upload, deletes the
+partial file, and reports `>200,ERR,{reason}` - a truncated image is never quietly accepted.
+
+**Rollout.** Bots are updated one at a time (`OTA.MAX_PARALLEL_UPDATES`). Each request
+`>201,{id},{version}` queues an `OtaCommand` carrying the staged image's size and CRC; those two
+values are sent only while they still describe the file on storage, so an aborted upload
+invalidates them and a reboot re-derives them by checksumming whatever is on LittleFS. The Server
+replies `>203,{id}` once the command is queued, and that is the point the Coordinator marks the
+bot active - a request that never gets an ack leaves the bot pending rather than showing a false
+success. Precondition and queue failures return as ordinary `>4` NACKs and fail that bot
+immediately instead of waiting out the result timeout.
+
+**On the bot.** `ota_updater.cpp` runs as its own FreeRTOS task. It joins the Server's WiFi AP
+(the same network used for the ESP-NOW gateway), downloads `GET /firmware.bin` from the Server's
+web handler, checks size and CRC-32 against the `OtaCommand`, and hands the image to the ESP OTA
+API. The version stamp sent with the command is the image CRC; each bot keeps its running version
+in NVS, so an image that bot already runs reports `ALREADY_CURRENT` and is not reflashed.
+
+**Reporting.** The bot does not ACK the `OtaCommand`. It sends an ESP-NOW `OtaResult`, then
+reboots onto the new firmware; the Server prints the outcome back up to the Coordinator as
+`>202,{id},{success},{err_code},{version}`.
+
+| Type | Direction | Format |
+|------|-----------|--------|
+| 200 | Host to ESP32 | `>200,{size},{crc32}` - stage an image, then raw bytes |
+| 200 | ESP32 to Host | `>200,READY` / `>200,OK` / `>200,ERR,{reason}` |
+| 201 | Host to ESP32 | `>201,{id},{version}` - broadcast the staged image |
+| 203 | ESP32 to Host | `>203,{id}` - the `>201` was queued |
+| 202 | ESP32 to Host | `>202,{id},{success},{err_code},{version}` - bot result |
+
+ESP-NOW is fire-and-forget, so the `>202` result is the only definitive confirmation that a bot
+updated; the Coordinator applies a per-bot `OTA.RESULT_TIMEOUT_S` and reports a timeout when none
+arrives. If the serial link to the Server goes down, any upload or rollout in flight is failed
+outright rather than left waiting on bots that can no longer be reached.
 
 ---
 

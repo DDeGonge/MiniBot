@@ -23,6 +23,8 @@ static int s_lineLen = 0;
 //                       then host streams exactly {size} raw bytes
 // >200,OK | >200,ERR,{msg}   ESP -> Host: upload result
 // >201,{id},{version}  Host -> ESP: push the staged firmware to a bot
+// >203,{id}            ESP -> Host: the >201 was queued (accept ack); a
+//                      per-bot >4 NACK is sent instead when it was rejected
 // ============================================================
 static bool s_otaUploadActive = false;
 static uint32_t s_otaExpectedSize = 0;
@@ -30,6 +32,16 @@ static uint32_t s_otaExpectedCrc32 = 0;
 static uint32_t s_otaBytesReceived = 0;
 static uint32_t s_otaRunningCrc32 = 0xFFFFFFFFU;
 static uint32_t s_otaLastByteMs = 0;
+
+// Identity of a firmware image that has been fully written AND verified.
+// >201 must only ever pair this CRC/size with the file they describe: taking
+// the CRC from a module-static while re-reading fw.size() from LittleFS used
+// to mix generations (e.g. after an aborted upload the file is gone but the
+// previous CRC survives), which hands bots a size/CRC pair that matches
+// nothing on disk. ``s_otaStagedValid`` is the gate rather than a crc != 0
+// sentinel, because a real CRC-32 of 0 is a possible (if rare) value.
+static bool s_otaStagedValid = false;
+static uint32_t s_otaStagedSize = 0;
 static uint32_t s_otaStagedCrc32 = 0;
 static File s_otaFile;
 
@@ -58,13 +70,82 @@ static uint32_t crc32Update(uint32_t crc, const uint8_t *buf, size_t len) {
   return crc;
 }
 
+// Usable LittleFS file space. LittleFS.totalBytes() is the raw partition size
+// and counts the index/journal blocks the filesystem itself needs, so an image
+// sized against it cannot actually be written; free bytes (with headroom) is
+// the bound that decides whether a staging attempt can succeed.
+static uint32_t otaFreeBytes() {
+  const uint32_t total = (uint32_t)LittleFS.totalBytes();
+  const uint32_t used = (uint32_t)LittleFS.usedBytes();
+  return total > used ? total - used : 0;
+}
+
+// Drop the staged-image identity: whatever CRC/size we cached no longer
+// describes a complete, verified file on disk.
+static void invalidateStagedFirmware() {
+  s_otaStagedValid = false;
+  s_otaStagedSize = 0;
+  s_otaStagedCrc32 = 0;
+}
+
 static void abortOtaUpload(const char *reason) {
   if (s_otaFile) {
     s_otaFile.close();
   }
   LittleFS.remove(OTA_FIRMWARE_PATH);
+  invalidateStagedFirmware();
   s_otaUploadActive = false;
   Serial.printf(">200,ERR,%s\n", reason);
+}
+
+// Re-derive the staged-image identity at boot. A reboot clears these statics
+// but LittleFS keeps the previous image (the bot's GET /firmware.bin and the
+// OTA_UPDATE_ALREADY_CURRENT path both rely on it), so refusing >201 until a
+// fresh upload happens would make an already-staged image unusable forever.
+// Reuse it only when the file reads back completely, and recompute the CRC
+// over the file rather than trusting any cached value, so >201 can never pair
+// an old CRC with different bytes. An unreadable file is dropped.
+static void restoreStagedFirmware() {
+  if (!LittleFS.exists(OTA_FIRMWARE_PATH)) {
+    return;
+  }
+
+  File fw = LittleFS.open(OTA_FIRMWARE_PATH, FILE_READ);
+  const uint32_t onDisk = fw ? fw.size() : 0;
+  if (!fw || onDisk == 0) {
+    if (fw) {
+      fw.close();
+    }
+    LittleFS.remove(OTA_FIRMWARE_PATH);
+    return;
+  }
+
+  uint32_t running = 0xFFFFFFFFU;
+  uint8_t buf[OTA_UPLOAD_CHUNK_SIZE];
+  uint32_t read = 0;
+  while (read < onDisk) {
+    const int n = fw.read(buf, sizeof(buf));
+    if (n <= 0) {
+      break;
+    }
+    running = crc32Update(running, buf, (size_t)n);
+    read += (uint32_t)n;
+  }
+  fw.close();
+
+  if (read == onDisk) {
+    // CRC recomputed here always describes the bytes on disk, so >201 can no
+    // longer pair a stale CRC with different file contents.
+    s_otaStagedValid = true;
+    s_otaStagedSize = onDisk;
+    s_otaStagedCrc32 = running ^ 0xFFFFFFFFU;
+    Serial.printf(">INFO,staged image on storage: %u bytes, crc 0x%08X\n",
+                  (unsigned)onDisk, (unsigned)s_otaStagedCrc32);
+  } else {
+    LittleFS.remove(OTA_FIRMWARE_PATH);
+    invalidateStagedFirmware();
+    Serial.println(">INFO,staged image unreadable, removed");
+  }
 }
 
 // Called every serialTask loop iteration while an upload is in progress.
@@ -100,23 +181,50 @@ static void pumpOtaUpload() {
       break;
     }
 
-    s_otaFile.write(chunk, n);
-    s_otaRunningCrc32 = crc32Update(s_otaRunningCrc32, chunk, n);
+    // LittleFS reports how much of the chunk it actually took. The return
+    // value used to be discarded, which turned an out-of-space image into a
+    // silent truncation: the running CRC was fed the bytes *received*, so the
+    // truncated file still "verified" and the server printed >200,OK. Every
+    // bot then downloaded a file whose size/CRC pair matched nothing and
+    // reported DOWNLOAD_FAILED / CRC_MISMATCH ("upload succeeded" followed by
+    // a grid of red dots). Treat anything but a full write as fatal.
+    const size_t requested = (size_t)n;
+    const size_t written = s_otaFile.write(chunk, requested);
+    if (written != requested) {
+      abortOtaUpload("storage full");
+      return;
+    }
+    s_otaRunningCrc32 = crc32Update(s_otaRunningCrc32, chunk, requested);
     s_otaBytesReceived += n;
     s_otaLastByteMs = millis();
     available = Serial.available();
   }
 
   if (s_otaBytesReceived >= s_otaExpectedSize) {
+    // Never confirm an image whose bytes on disk do not match what was sent,
+    // regardless of what the write calls reported above.
+    const uint32_t onDisk = s_otaFile.size();
     s_otaFile.close();
-    uint32_t finalCrc = s_otaRunningCrc32 ^ 0xFFFFFFFFU;
+    if (onDisk != s_otaExpectedSize) {
+      LittleFS.remove(OTA_FIRMWARE_PATH);
+      invalidateStagedFirmware();
+      s_otaUploadActive = false;
+      Serial.printf(">200,ERR,truncated %u/%u bytes\n", (unsigned)onDisk,
+                    (unsigned)s_otaExpectedSize);
+      return;
+    }
+
+    const uint32_t finalCrc = s_otaRunningCrc32 ^ 0xFFFFFFFFU;
     if (finalCrc == s_otaExpectedCrc32) {
+      s_otaStagedValid = true;
+      s_otaStagedSize = s_otaExpectedSize;
       s_otaStagedCrc32 = finalCrc;
       Serial.println(">200,OK");
     } else {
       LittleFS.remove(OTA_FIRMWARE_PATH);
+      invalidateStagedFirmware();
       Serial.printf(">200,ERR,crc mismatch got 0x%08X want 0x%08X\n", finalCrc,
-                   s_otaExpectedCrc32);
+                    s_otaExpectedCrc32);
     }
     s_otaUploadActive = false;
   }
@@ -324,14 +432,34 @@ static void processLine(char *line) {
 
     uint32_t expectedSize = (uint32_t)strtoul(sizeStr, NULL, 0);
     uint32_t expectedCrc32 = (uint32_t)strtoul(crcStr, NULL, 0);
-    if (expectedSize == 0 || expectedSize > LittleFS.totalBytes()) {
+    if (expectedSize == 0) {
       Serial.println(">200,ERR,bad size");
       return;
     }
 
+    // Drop the previous image first: its blocks are what makes room for the
+    // new one, so free bytes must be measured after the removal. The identity
+    // is cleared here too - once the file is gone, whatever CRC we cached
+    // describes nothing on disk.
     if (LittleFS.exists(OTA_FIRMWARE_PATH)) {
       LittleFS.remove(OTA_FIRMWARE_PATH);
+      invalidateStagedFirmware();
     }
+
+    // totalBytes() is the raw partition size and counts the index/journal
+    // blocks LittleFS itself needs, so an image sized against it cannot
+    // actually be written. Bound against usable free space instead; the old
+    // check let an oversized image pass, after which the write silently
+    // truncated it and the CRC still "verified" over the bytes sent, so the
+    // coordinator saw a successful upload of an unusable image.
+    const uint32_t freeBytes = otaFreeBytes();
+    if (expectedSize + OTA_STAGING_HEADROOM_BYTES > freeBytes) {
+      invalidateStagedFirmware();
+      Serial.printf(">200,ERR,no space (%u > %u free)\n", (unsigned)expectedSize,
+                    (unsigned)freeBytes);
+      return;
+    }
+
     s_otaFile = LittleFS.open(OTA_FIRMWARE_PATH, FILE_WRITE);
     if (!s_otaFile) {
       Serial.println(">200,ERR,failed to open storage");
@@ -356,30 +484,63 @@ static void processLine(char *line) {
     char *idStr = strtok(NULL, ",\r\n");
     char *verStr = strtok(NULL, ",\r\n");
     if (!idStr || !verStr) {
+      // Malformed frame: there is no target ID to attach a NACK to, so
+      // this stays a global parse-error. build_ota_start always emits a
+      // well-formed line, so this path should not fire in practice.
       Serial.println(">ERR,OTA: need id,version");
       return;
     }
-    if (s_otaUploadActive || !LittleFS.exists(OTA_FIRMWARE_PATH)) {
-      Serial.println(">ERR,OTA: no firmware staged");
+    // Hoist the target ID so every rejection below can be attributed to a
+    // specific bot. The previous ">ERR,..." prints landed in RESP_PARSE_ERROR
+    // on the Coordinator and were invisible to OtaManager, so each rejection
+    // silently burned OTA.RESULT_TIMEOUT_S (90 s) before surfacing as a
+    // timeout. Per-bot NACKs (>4,{id},{err_type},{timestamp_ms}) let
+    // OtaManager fail the affected rollout slot within milliseconds.
+    const uint8_t targetID = parseID(idStr);
+
+    // Only a fully written AND checksum-verified image may be broadcast. The
+    // previous check only tested "a file exists", so a file left on storage by
+    // an aborted/upload-in-progress run could be paired with the CRC of an
+    // unrelated image, and every bot then failed on a size/CRC pair that
+    // matched nothing it downloaded.
+    if (s_otaUploadActive || !s_otaStagedValid) {
+      Serial.printf(">4,0x%02X,%u,%u\n", targetID,
+                    (uint8_t)ERR_ROBOT_UNAVAILABLE, (uint32_t)millis());
       return;
     }
 
+    // Re-read the file and require it to still be the staged one, so the size
+    // and CRC shipped to the bots always describe the same bytes.
     File fw = LittleFS.open(OTA_FIRMWARE_PATH, FILE_READ);
-    uint32_t fwSize = fw ? fw.size() : 0;
+    const uint32_t fwSize = fw ? fw.size() : 0;
     if (fw) {
       fw.close();
+    }
+    if (fwSize != s_otaStagedSize) {
+      invalidateStagedFirmware();
+      Serial.printf(">4,0x%02X,%u,%u\n", targetID,
+                    (uint8_t)ERR_ROBOT_UNAVAILABLE, (uint32_t)millis());
+      return;
     }
 
     CommandMessage msg = {};
     msg.commandType = CMD_TYPE_OTA;
     OtaCommand &ota = msg.data.otaCmd;
-    ota.targetID = parseID(idStr);
+    ota.targetID = targetID;
     ota.msg_type = MSG_TYPE_OTA_COMMAND;
     ota.fw_version = (uint32_t)strtoul(verStr, NULL, 0);
-    ota.fw_size = fwSize;
+    ota.fw_size = s_otaStagedSize;
     ota.fw_crc32 = s_otaStagedCrc32;
     if (xQueueSend(commandQueue, &msg, 0) != pdPASS) {
-      Serial.println(">ERR,queue full");
+      Serial.printf(">4,0x%02X,%u,%u\n", targetID,
+                    (uint8_t)ERR_QUEUE_FULL, (uint32_t)millis());
+    } else {
+      // Per-bot accept ack. The Coordinator must not paint a bot active just
+      // because it wrote the >201 bytes: until this line arrives, the command
+      // has not even been queued here, let alone broadcast. Proves only that
+      // the Server queued the command - the ESP-NOW leg to the bot is still
+      // fire-and-forget, so the definitive signal remains the >202 result.
+      Serial.printf(">203,0x%02X\n", targetID);
     }
     break;
   }
@@ -432,6 +593,12 @@ void initSerial() {
   } else {
     Serial.printf(">INFO,LittleFS mounted (%u/%u bytes used)\n",
                  (unsigned)LittleFS.usedBytes(), (unsigned)LittleFS.totalBytes());
+
+    // An image left over from a previous run is still downloadable via GET
+    // /firmware.bin and still counts as "current" for the bot's
+    // OTA_UPDATE_ALREADY_CURRENT check, so it must stay usable after a reboot:
+    // recover its identity by checksumming the bytes actually on storage.
+    restoreStagedFirmware();
   }
 }
 

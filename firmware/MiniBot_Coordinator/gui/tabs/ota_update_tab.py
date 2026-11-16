@@ -8,7 +8,14 @@ OTA Update tab:
 
 Status dot colors: grey=none, yellow=pending, orange=active, green=success,
 red=failed. Cancelling a rollout reverts pending/active dots back to grey;
-bots that already succeeded or failed keep their color.
+bots that already succeeded or failed keep their color. Cancelling while the
+firmware image is still streaming aborts the upload and reverts pending dots
+so the cancelled rollout cannot resurrect itself via a late
+``upload_finished(True, ...)`` callback. A serial disconnect likewise aborts an
+in-flight upload/rollout: ``OtaManager`` owns the ``SerialHandler``, so the tab
+listens to the re-emitted ``serial_connection_changed`` instead of receiving the
+handler itself — ``SerialHandler.send()``/``send_chunked()`` are silent no-ops
+when the port is down, which used to make a dead link look healthy.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from comms.ota_manager import OtaManager
-from config import PIECES
+from config import OTA, PIECES
 
 _STATUS_COLORS = {
     "none": "#555555",
@@ -101,7 +108,12 @@ class OtaUpdateTab(QWidget):
         self._firmware_path: Optional[str] = None
         self._auto_checked_once = False
         self._pending_targets: List[int] = []
+        self._rollout_total = 0  # snapshot of target count taken at rollout start
         self._completed_count = 0
+        # Reason an in-flight upload/rollout was killed by the Coordinator
+        # itself (serial disconnect). Surfaced on the summary line so the user
+        # can tell "the link went down" apart from a bot/server failure.
+        self._abort_reason: Optional[str] = None
         self._tiles: Dict[int, _BotTile] = {}
 
         self._build_ui()
@@ -215,8 +227,50 @@ class OtaUpdateTab(QWidget):
             self._status_label.setStyleSheet("color: #e05656;")
             return
 
+        # Refuse before touching any state: SerialHandler.send()/send_chunked()
+        # are silent no-ops on a dead link, so without this check the upload
+        # looks healthy for OTA.UPLOAD_READY_TIMEOUT_S and then blames the
+        # Server ("no READY received") for what is really an unplugged port.
+        if not self._manager.serial_connected():
+            self._status_label.setText(
+                "Serial port not connected to the Server - connect it before "
+                "starting an OTA."
+            )
+            self._status_label.setStyleSheet("color: #e05656;")
+            return
+
+        # Read the image here before flipping Begin/Cancel or entering the
+        # pending state so:
+        #   * an unreadable file (deleted / moved / locked / a directory, or
+        #     an SMB path that went away) surfaces as an explicit error
+        #     instead of raising inside the Qt ``clicked`` callback and
+        #     leaving every dot pending with Cancel as the only escape;
+        #   * the label shown at Begin-time matches the payload we will
+        #     actually stream (the Browse-time ``os.path.getsize`` and a
+        #     second read inside ``upload_firmware`` used to be able to
+        #     disagree if the file changed since Browse).
+        # ``upload_firmware`` now takes bytes, so this single read is the
+        # sole source of both the displayed size and the CRC.
+        try:
+            with open(self._firmware_path, "rb") as f:
+                firmware_bytes = f.read()
+        except OSError as exc:
+            self._status_label.setText(
+                f"Could not read firmware file: {exc}"
+            )
+            self._status_label.setStyleSheet("color: #e05656;")
+            return
+
+        # Refresh the Browse-time label against the actual bytes read.
+        self._file_label.setText(
+            f"{os.path.basename(self._firmware_path)} "
+            f"({len(firmware_bytes):,} bytes)"
+        )
+        self._file_label.setStyleSheet("color: #d0d0d0;")
+
         self._pending_targets = checked_ids
         self._completed_count = 0
+        self._abort_reason = None
         for piece_id, tile in self._tiles.items():
             tile.set_status("pending" if piece_id in checked_ids else "none")
 
@@ -224,14 +278,23 @@ class OtaUpdateTab(QWidget):
         self._btn_cancel.setEnabled(True)
         self._status_label.setStyleSheet("color: #888888;")
         self._status_label.setText("Uploading firmware to server...")
-        self._manager.upload_firmware(self._firmware_path)
+        self._manager.upload_firmware(firmware_bytes)
 
     def _on_cancel(self) -> None:
+        # Abort an in-flight upload first. When an upload is in flight,
+        # ``abort_upload`` clears the pending bytes/timers and emits
+        # ``upload_finished(False, "cancelled by user", 0)``, which drives
+        # ``_on_upload_finished`` and reverts the pending tiles. It is a
+        # no-op when no upload is running.
+        self._manager.abort_upload()
+        # Then cancel any rollout in progress (also a no-op if none is active).
         outstanding = self._manager.cancel_rollout()
         for piece_id in outstanding:
             tile = self._tiles.get(piece_id)
             if tile is not None:
                 tile.set_status("none")
+        self._pending_targets = []
+        self._abort_reason = None
         self._btn_begin.setEnabled(True)
         self._btn_cancel.setEnabled(False)
         self._status_label.setText("OTA cancelled.")
@@ -248,6 +311,37 @@ class OtaUpdateTab(QWidget):
         self._manager.bot_dispatched.connect(self._on_bot_dispatched)
         self._manager.bot_result.connect(self._on_bot_result)
         self._manager.rollout_finished.connect(self._on_rollout_finished)
+        # Connection state: OtaManager re-emits SerialHandler.connection_changed
+        # and already fails whatever is in flight; the tab only needs to say
+        # why the dots changed.
+        self._manager.serial_connection_changed.connect(
+            self._on_serial_connection
+        )
+
+    def _on_serial_connection(self, connected: bool) -> None:
+        if connected:
+            if self._abort_reason:
+                # Link came back; keep the last outcome text but stop labelling
+                # it as a disconnect-induced abort.
+                self._abort_reason = None
+            return
+
+        # Only complain about in-flight work when something actually is:
+        # a plain disconnect with no upload/rollout running must not look like
+        # a failure, and must not overwrite a previous run's summary.
+        in_flight = any(
+            tile.status in ("pending", "active") for tile in self._tiles.values()
+        )
+        if not in_flight:
+            return
+        self._abort_reason = "serial port disconnected"
+        self._status_label.setText(
+            "Serial port disconnected - any in-flight upload/rollout is being "
+            "failed."
+        )
+        self._status_label.setStyleSheet("color: #e05656;")
+        self._btn_begin.setEnabled(True)
+        self._btn_cancel.setEnabled(False)
 
     def _on_upload_progress(self, message: str) -> None:
         self._status_label.setText(message)
@@ -266,19 +360,34 @@ class OtaUpdateTab(QWidget):
             self._status_label.setStyleSheet("color: #e05656;")
             for piece_id in self._pending_targets:
                 self._tiles[piece_id].set_status("none")
+            self._pending_targets = []
             self._btn_begin.setEnabled(True)
             self._btn_cancel.setEnabled(False)
             return
 
-        self._status_label.setText(f"Rolling out to {len(self._pending_targets)} bot(s)...")
-        self._manager.start_rollout(self._pending_targets, version=crc32)
+        # Snapshot the target list so a stale reference cannot be replayed
+        # if upload_finished ever fires again (e.g. a leaked timeout timer on
+        # a subsequent upload). ``_pending_targets`` is cleared right after
+        # the rollout is kicked off.
+        targets = list(self._pending_targets)
+        self._pending_targets = []
+        self._rollout_total = len(targets)
+        self._status_label.setText(f"Rolling out to {self._rollout_total} bot(s)...")
+        self._manager.start_rollout(targets, version=crc32)
 
     def _on_bot_dispatched(self, piece_id: int) -> None:
+        # Reached only on the Server's accept ack (>203,{id}), so an orange dot
+        # now means "this bot's OTA command is queued on the Server" rather
+        # than "the Coordinator wrote some bytes". Bots that are still queued
+        # but not yet accepted stay pending (grey) until the ack, a per-bot
+        # NACK, or the per-bot timeout resolves them.
         tile = self._tiles.get(piece_id)
         if tile is not None:
             tile.set_status("active")
         self._status_label.setStyleSheet("color: #888888;")
-        self._status_label.setText(f"Requesting bot 0x{piece_id:02X} enter OTA mode...")
+        self._status_label.setText(
+            f"Server accepted bot 0x{piece_id:02X} - waiting for its result..."
+        )
 
     def _on_bot_result(self, piece_id: int, success: bool, err_code: int) -> None:
         tile = self._tiles.get(piece_id)
@@ -286,11 +395,16 @@ class OtaUpdateTab(QWidget):
             tile.set_status("success" if success else "failed")
 
         self._completed_count += 1
-        total = len(self._pending_targets)
+        # Use the snapshot taken at rollout start: ``_pending_targets`` is
+        # cleared in ``_on_upload_finished`` once the rollout begins so a
+        # stale reference cannot resurrect the previous run.
+        total = self._rollout_total
         if success:
             outcome = "succeeded"
-        elif err_code == -1:
+        elif err_code == OTA.ERR_CODE_TIMEOUT:
             outcome = "timed out waiting for a result"
+        elif err_code == OTA.ERR_CODE_NO_CONNECTION:
+            outcome = "aborted - serial port disconnected"
         else:
             outcome = f"failed (code {err_code})"
         self._status_label.setStyleSheet("color: #888888;")
@@ -301,7 +415,13 @@ class OtaUpdateTab(QWidget):
     def _on_rollout_finished(self, results: dict) -> None:
         succeeded = sum(1 for ok in results.values() if ok)
         total = len(results)
-        self._status_label.setText(f"OTA complete: {succeeded}/{total} succeeded.")
+        # Prefix a Coordinator-side abort (serial disconnect) so the summary
+        # does not read like every bot refused the update on its own.
+        prefix = f"{self._abort_reason} - " if self._abort_reason else ""
+        self._abort_reason = None
+        self._status_label.setText(
+            f"{prefix}OTA complete: {succeeded}/{total} succeeded."
+        )
         self._status_label.setStyleSheet(
             "color: #7cbb7c;" if total and succeeded == total else "color: #e0a456;"
         )

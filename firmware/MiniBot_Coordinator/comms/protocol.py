@@ -22,6 +22,7 @@ ESP32 → Host responses:
     >255                                                           Pong
     >200,READY | >200,OK | >200,ERR,{message}                      OTA upload status
     >202,{id},{success},{err_code},{version}                       OTA result
+    >203,{id}                                                      OTA: Server queued a >201 (accept ack)
     >ERR,{message}                                                 Parse error
 
 Theta is transmitted in radians on the wire.  Builder functions accept degrees
@@ -334,6 +335,16 @@ def parse_line(raw: Union[str, bytes]) -> ParsedMessage:
                 msg_type=OTA.RESP_UPLOAD_STATUS,
                 ota_status=status,
                 parse_error=detail,
+                raw=raw,
+            )
+
+        if msg_id == OTA.RESP_OTA_ACCEPTED and len(parts) == 2:
+            # >203,{id} — Server accepted (queued) an OTA start command. Proof
+            # only that the Server queued it, not that the bot received the
+            # ESP-NOW broadcast; the definitive signal remains the >202 result.
+            return ParsedMessage(
+                msg_type=OTA.RESP_OTA_ACCEPTED,
+                piece_id=int(parts[1], 0),
                 raw=raw,
             )
 

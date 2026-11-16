@@ -53,6 +53,9 @@ class _SerialWorker(QObject):
     # OTA: upload status ("READY"/"OK"/"ERR", detail message) and per-bot result
     ota_upload_status = pyqtSignal(str, str)
     ota_result_received = pyqtSignal(int, bool, int, int)  # id, success, err_code, version
+    # >203,{id} — the Server accepted (queued) a >201 OTA start. Without this
+    # the Coordinator cannot tell "bytes written" from "command accepted".
+    ota_command_accepted = pyqtSignal(int)  # id
 
     # Bulk transfer (e.g. OTA firmware): bytes written for one enqueue_bulk() chunk
     chunk_sent = pyqtSignal(int)
@@ -251,6 +254,8 @@ class _SerialWorker(QObject):
                 msg.piece_id, bool(msg.ota_success), msg.err_type or 0,
                 msg.ota_version or 0,
             )
+        elif msg.msg_type == OTA.RESP_OTA_ACCEPTED and msg.piece_id is not None:
+            self.ota_command_accepted.emit(msg.piece_id)
         # UNKNOWN and PARSE_ERROR lines are still surfaced via raw_line_received above
 
 
@@ -278,6 +283,7 @@ class SerialHandler(QObject):
 
     ota_upload_status = pyqtSignal(str, str)
     ota_result_received = pyqtSignal(int, bool, int, int)
+    ota_command_accepted = pyqtSignal(int)  # id — Server queued a >201
     chunk_sent = pyqtSignal(int)
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
@@ -288,7 +294,13 @@ class SerialHandler(QObject):
 
     @property
     def is_connected(self) -> bool:
-        return self._connected
+        """True only when send()/send_chunked() would actually enqueue.
+
+        Mirrors the guard in those two methods: a worker that has not been
+        created yet (or has been torn down) cannot accept bytes even if a
+        previous connection state said we were attached.
+        """
+        return self._worker is not None and self._connected
 
     # ------------------------------------------------------------------
     # Connection management
@@ -318,6 +330,7 @@ class SerialHandler(QObject):
         self._worker.connection_changed.connect(self._on_connection_changed)
         self._worker.ota_upload_status.connect(self.ota_upload_status)
         self._worker.ota_result_received.connect(self.ota_result_received)
+        self._worker.ota_command_accepted.connect(self.ota_command_accepted)
         self._worker.chunk_sent.connect(self.chunk_sent)
 
         # Lifecycle wiring

@@ -91,6 +91,13 @@ const bool EMAG_EN_ON_EXPANDER[EMAG_COUNT] = {
 #define OTA_UPLOAD_STALL_TIMEOUT_MS                                            \
   5000 // abort an in-progress upload if no bytes arrive for this long
 
+// Headroom reserved for LittleFS metadata when sizing a staging attempt.
+// LittleFS.totalBytes() is the raw partition size and counts the index/journal
+// blocks the filesystem itself needs, so an image sized against it cannot
+// actually be written; free bytes (with this margin) is the bound that decides
+// whether a staging attempt can succeed.
+#define OTA_STAGING_HEADROOM_BYTES (2 * 1024)
+
 #if ENABLE_DEBUG_PRINTS
 #define DEBUG_PRINTLN(x) Serial.println(x)
 #define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)

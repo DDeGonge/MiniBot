@@ -258,6 +258,11 @@ class OTA:
     RESP_UPLOAD_STATUS = 200  # >200,READY | >200,OK | >200,ERR,{message}
     RESP_RESULT = 202  # >202,{id},{success},{err_code},{version}
 
+    # Server-side accept ack: emitted by SerialTask once a >201 OTA start has
+    # actually been queued on the Server. The Coordinator must not treat a bot
+    # as "active" merely because it wrote the >201 bytes to the UART.
+    RESP_OTA_ACCEPTED = 203  # >203,{id}
+
     # Result codes reported by a bot (mirrors OtaResultCode in firmware)
     RESULT_SUCCESS = 0
     RESULT_ALREADY_CURRENT = 1
@@ -265,6 +270,12 @@ class OTA:
     RESULT_DOWNLOAD_FAILED = 3
     RESULT_CRC_MISMATCH = 4
     RESULT_FLASH_FAILED = 5
+
+    # Negative pseudo-codes for failures the Coordinator itself generates —
+    # they never come from a bot, so they cannot collide with OtaResultCode
+    # values 0..5 above. OtaUpdateTab maps them to human-readable outcomes.
+    ERR_CODE_TIMEOUT = -1  # no >202 result within RESULT_TIMEOUT_S
+    ERR_CODE_NO_CONNECTION = -2  # serial link to the Server went down
 
     # Number of bots updated concurrently during a fleet rollout.
     # Start at 1 (fully sequential) until real-world OTA timing is measured.
