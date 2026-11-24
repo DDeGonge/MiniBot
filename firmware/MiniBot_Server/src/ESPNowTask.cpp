@@ -154,6 +154,27 @@ void onDataRecv(const uint8_t *mac_addr, const uint8_t *incomingData, int len) {
     }
   }
 
+  // Try to handle as OtaResult
+  if (len == sizeof(OtaResult)) {
+    OtaResult otaRes;
+    memcpy(&otaRes, incomingData, sizeof(otaRes));
+    if (otaRes.msg_type == MSG_TYPE_OTA_RESULT) {
+      DEBUG_PRINTF("OTA result from robot 0x%02X: code=%d version=%u\n",
+                   otaRes.responderID, otaRes.result_code, otaRes.fw_version);
+
+      GUIStatus status = {};
+      status.targetID = otaRes.responderID;
+      status.otaResultValid = true;
+      status.otaSuccess = (otaRes.result_code == OTA_RESULT_SUCCESS ||
+                           otaRes.result_code == OTA_RESULT_ALREADY_CURRENT);
+      status.otaErrCode = otaRes.result_code;
+      status.otaVersion = otaRes.fw_version;
+      status.magnetFieldValid = false;
+      broadcastStatus(status);
+      return;
+    }
+  }
+
   DEBUG_PRINTF("Warning: Unhandled message type or size mismatch (len=%d, "
                "AckMsg=%d, NackMsg=%d, MagField=%d)\n",
                len, sizeof(AckMessage), sizeof(NackMessage),
@@ -217,6 +238,26 @@ void espNowTask(void *parameter) {
           DEBUG_PRINTLN("MotTestCommand broadcast sent");
         } else {
           DEBUG_PRINTF("MotTestCommand send failed: %d\n", result);
+        }
+      } else if (msg.commandType == CMD_TYPE_OTA) {
+        // Handle OtaCommand (fire-and-forget; the bot reports back later via
+        // an unsolicited OtaResult once it finishes, which may take a while)
+        OtaCommand *otaCmd = &msg.data.otaCmd;
+        otaCmd->timestamp = millis();
+        DEBUG_PRINTF("Sending OtaCommand to 0x%02X: version=%u size=%u "
+                     "crc32=0x%08X\n",
+                     otaCmd->targetID, otaCmd->fw_version, otaCmd->fw_size,
+                     otaCmd->fw_crc32);
+
+        beginTxWindow();
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)otaCmd,
+                                        sizeof(OtaCommand));
+        endTxWindow();
+
+        if (result == ESP_OK) {
+          DEBUG_PRINTLN("OtaCommand broadcast sent");
+        } else {
+          DEBUG_PRINTF("OtaCommand send failed: %d\n", result);
         }
       } else if (msg.commandType == CMD_TYPE_GUI) {
         // Handle GUICommand (from GUI)

@@ -585,12 +585,9 @@ void PositionEstimator_SensorTask(void *pvParameters) {
   // Performance counters — logged per frame
   uint32_t reads_attempted = 0;
   uint32_t reads_stale = 0;
-  int len = 50;
-  uint16_t read_err[len] = {0};
 
   // DEBUG LOOP
   // while (1) {
-  //   mag.self_benchmark(5000, 975);
   // mag.readMeasurement();
   // float mx = mag.getFieldGaussX();
   // float my = -mag.getFieldGaussY();

@@ -64,4 +64,30 @@ bool EspNowCommunicator_RegisterCallback(EspNowReceiveCallback callback);
  */
 bool EspNowCommunicator_SendAlert(uint8_t error_type);
 
+/**
+ * Send an OtaResult message to a specific peer (the sender of the OtaCommand
+ * being responded to)
+ *
+ * @param mac_addr MAC address of the recipient (the Server)
+ * @param result_code One of the OtaResultCode enum values
+ * @param fw_version Firmware version associated with the result
+ * @return true on success, false on failure
+ */
+bool EspNowCommunicator_SendOtaResult(const uint8_t *mac_addr,
+                                      uint8_t result_code,
+                                      uint32_t fw_version);
+
+/**
+ * Force-reapply the ESP-NOW radio wake window / wake interval to match the
+ * current duty-cycle state.
+ *
+ * set_duty_cycle() short-circuits when its tracked state matches the request,
+ * but a WiFi.begin + WiFi.disconnect sequence (OTA joining the server's AP)
+ * resets the ESP-IDF wake settings behind its back. After an OTA attempt the
+ * communicator task's next set_duty_cycle call early-returns and the radio
+ * stays mis-tuned for the rest of the boot. Call this after an OTA to put
+ * the ESP-IDF wake configuration back in sync with duty_cycle_active.
+ */
+void EspNowCommunicator_RestoreDutyCycle();
+
 #endif // __ESP_NOW_COMMUNICATOR_H__

@@ -9,7 +9,8 @@
 enum CommandType {
   CMD_TYPE_GUI = 0,
   CMD_TYPE_MOT_TEST = 1,
-  CMD_TYPE_POS_SYNC = 2
+  CMD_TYPE_POS_SYNC = 2,
+  CMD_TYPE_OTA = 3
 };
 
 // Internal queue message types
@@ -25,10 +26,11 @@ struct GUICommand {
 
 // Union to allow different command types through the same queue
 struct CommandMessage {
-  uint8_t commandType; // Discriminator: 0=GUICommand, 1=MotTestCommand
+  uint8_t commandType; // Discriminator: 0=GUICommand, 1=MotTestCommand, 3=OtaCommand
   union {
     GUICommand guiCmd;
     MotTestCommand motCmd;
+    OtaCommand otaCmd;
   } data;
 };
 
@@ -45,6 +47,12 @@ struct GUIStatus {
   float magnetZ_gauss;
   bool magnetFieldValid;
   uint8_t syncStatus = 0; // 0=no update, 1=ACK, 2=NACK
+
+  // OTA result reporting (set when an OtaResult arrives from a bot)
+  bool otaResultValid = false;
+  bool otaSuccess = false;
+  uint8_t otaErrCode = 0;
+  uint32_t otaVersion = 0;
 };
 
 // Queue handles

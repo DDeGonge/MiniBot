@@ -13,8 +13,10 @@ A FreeRTOS powered controller for a tiny 2 wheel robot.
 #include "led_status.h"
 #include "motion_queue.h"
 #include "motor_test_queue.h"
+#include "ota_updater.h"
 #include "position_estimator.h"
 #include "robot.h"
+#include <esp_ota_ops.h>
 
 static const char *TAG = "MAIN";
 
@@ -28,6 +30,7 @@ static TaskHandle_t position_estimator_sensor_task_handle = NULL;
 static TaskHandle_t position_estimator_calc_task_handle = NULL;
 static TaskHandle_t battery_monitor_task_handle = NULL;
 static TaskHandle_t led_status_task_handle = NULL;
+static TaskHandle_t ota_updater_task_handle = NULL;
 
 static bool initialize_status_led(void) {
   BaseType_t task_created =
@@ -106,6 +109,24 @@ static bool create_tasks(void) {
   }
   ESP_LOGI(TAG, "Battery Monitor task created successfully");
 
+  static OtaUpdaterParams ota_updater_params = {
+      .robot = &robot,
+      .kinematics_task = kinematics_task_handle,
+      .communicator_task = communicator_task_handle,
+      .position_estimator_sensor_task = position_estimator_sensor_task_handle,
+      .position_estimator_calc_task = position_estimator_calc_task_handle,
+  };
+
+  task_created =
+      xTaskCreate(OtaUpdater_Task, "OtaUpdater", 8192,
+                  (void *)&ota_updater_params, OTA_UPDATER_PRIORITY,
+                  &ota_updater_task_handle);
+  if (task_created != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create OTA Updater task");
+    return false;
+  }
+  ESP_LOGI(TAG, "OTA Updater task created successfully");
+
   return true;
 }
 
@@ -154,6 +175,12 @@ static bool initialize_modules(void) {
   }
   ESP_LOGI(TAG, "Battery monitor initialized successfully");
 
+  if (!OtaUpdater_Init()) {
+    ESP_LOGE(TAG, "Failed to initialize OTA updater");
+    return false;
+  }
+  ESP_LOGI(TAG, "OTA updater initialized successfully");
+
   return true;
 }
 
@@ -180,6 +207,7 @@ void setup() {
   esp_log_level_set("POS_EST", (esp_log_level_t)LOG_LEVEL_POS_EST);
   esp_log_level_set("MMC5633", (esp_log_level_t)LOG_LEVEL_MMC5633);
   esp_log_level_set("ROBOT", (esp_log_level_t)LOG_LEVEL_ROBOT);
+  esp_log_level_set("OTA", (esp_log_level_t)LOG_LEVEL_ESPNOW);
   ESP_LOGI(TAG, "\n\n=== MiniBot Stepper Client ===");
 
   ESP_LOGI(TAG, "Initializing FreeRTOS framework...");
@@ -207,11 +235,15 @@ void setup() {
            "Core 0: ESP-NOW, Position Estimator, Battery Monitor, LED Status");
   ESP_LOGI(TAG, "Core 1: Kinematics Controller");
 
+  // Confirm this image booted successfully so the bootloader doesn't roll
+  // back to the previous OTA partition on the next reset.
+  esp_ota_mark_app_valid_cancel_rollback();
+
   setCpuFrequencyMhz(80);
 
   // Write device ID to NVS, ony do this one time. Persistant across reflashes.
   // TODO create a function to set ID based on current position on chess board
-  // setDeviceID(0x0d);
+  // setDeviceID(0x12);
 
   uint8_t device_id = getDeviceID();
   if (device_id == 0xFF) {

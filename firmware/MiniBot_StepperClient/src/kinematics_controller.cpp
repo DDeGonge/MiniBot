@@ -18,6 +18,48 @@ static float current_m1_velocity_rad_s = 0.0f;
 static uint32_t last_motor_test_command_us = 0;
 static bool motor_test_active = false;
 
+// Debug waypoint table:
+// Add, remove, or reorder entries here to change the debug behavior.
+// Each entry runs pose, then optionally waits delay_after_ms.
+struct DebugWaypoint {
+  MotionCommand pose;
+  uint32_t delay_after_ms;
+};
+
+static const DebugWaypoint waypoints[] = {
+    // { pose }, delay_after_ms
+    {{75.0f, 75.0f, 0.0f, 700.0f}, 5000},
+    {{225.0f, 75.0f, 0.0f, 1000.0f}, 0},
+    {{225.0f, 75.0f, 1.571f, 700.0f}, 5000},
+    {{225.0f, 225.0f, 1.571f, 1000.0f}, 0},
+    {{225.0f, 225.0f, 0.0f, 700.0f}, 5000},
+    {{75.0f, 225.0f, 0.0f, 1000.0f}, 0},
+    {{75.0f, 75.0f, 1.571f, 1000.0f}, 10000},
+    {{75.0f, 225.0f, 1.571f, 700.0f}, 5000},
+    {{75.0f, 75.0f, 3.142f, 1000.0f}, 2000},
+};
+
+static void RunDebugWaypointLoop(Robot *robot) {
+  const unsigned waypoint_count = sizeof(waypoints) / sizeof(waypoints[0]);
+
+  vTaskDelay(pdMS_TO_TICKS(3000));
+
+  while (1) {
+    for (unsigned i = 0; i < waypoint_count; ++i) {
+      const DebugWaypoint &waypoint = waypoints[i];
+
+      robot->setTargetPose(waypoint.pose);
+
+      ESP_LOGD(TAG, "Debug waypoint [%u], delay_after_ms=%u", i,
+               waypoint.delay_after_ms);
+
+      if (waypoint.delay_after_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(waypoint.delay_after_ms));
+      }
+    }
+  }
+}
+
 bool KinematicsController_Init(MotionQueue motion_queue,
                                MotorTestQueue motor_test_q) {
   if (motion_queue == NULL || motor_test_q == NULL) {
@@ -40,32 +82,9 @@ void KinematicsController_Task(void *pvParameters) {
   MotionCommand cmd_buffer;
   MotorTestRequest motor_test_buffer;
 
-  // debug cmds
-  // MotionCommand cmd0 = {75.0f, 75.0f, 0.0f,   700.0f};
-  // MotionCommand cmd1 = {225.0f, 75.0f, 0.0f,   1000.0f};
-  // MotionCommand cmd2 = {225.0f, 75.0f, 1.571f, 700.0f};
-  // MotionCommand cmd3 = {225.0f, 225.0f, 1.571f, 1000.0f};
-  // MotionCommand cmd4 = {225.0f, 225.0f, 0.0f,   700.0f};
-  // MotionCommand cmd5 = {75.0f, 225.0f, 0.0f,   1000.0f};
-  // MotionCommand cmd6 = {75.0f, 225.0f, 1.571f, 700.0f};
-  // MotionCommand cmd7 = {75.0f, 75.0f, 1.571f, 1000.0f};
-
-  // debug loop
-  // vTaskDelay(pdMS_TO_TICKS(3000));
-  // while (1) {
-  //     robot->setTargetPose(cmd0);
-  //     vTaskDelay(pdMS_TO_TICKS(5000));
-  //     robot->setTargetPose(cmd1);
-  //     robot->setTargetPose(cmd2);
-  //     vTaskDelay(pdMS_TO_TICKS(5000));
-  //     robot->setTargetPose(cmd3);
-  //     robot->setTargetPose(cmd4);
-  //     vTaskDelay(pdMS_TO_TICKS(5000));
-  //     robot->setTargetPose(cmd5);
-  //     robot->setTargetPose(cmd6);
-  //     vTaskDelay(pdMS_TO_TICKS(5000));
-  //     robot->setTargetPose(cmd7);
-  // }
+  // Debug waypoint loop. Edit waypoints[] above to add/remove/reorder
+  // waypoints or delays; an empty table skips this loop entirely.
+  RunDebugWaypointLoop(robot);
 
   while (1) {
     uint32_t current_us = micros();

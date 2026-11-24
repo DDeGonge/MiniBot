@@ -12,12 +12,17 @@ Host → ESP32 commands:
     >7                                                   Sync broadcast
     >254,{0|1}                                           Electromagnet enable/disable
     >255                                                 Ping
+    >200,{size},{crc32}                                  OTA: begin firmware upload (raw bytes follow)
+    >201,{id},{version}                                  OTA: push staged firmware to a bot
 
 ESP32 → Host responses:
     >3,{id},{x_mm},{y_mm},{theta_rad},{timestamp_ms},{battery_v}   ACK / position update
     >4,{id},{err_type},{timestamp_ms}                              NACK
     >6,{id},{bx},{by},{bz},{timestamp_ms}                          Mag field response
     >255                                                           Pong
+    >200,READY | >200,OK | >200,ERR,{message}                      OTA upload status
+    >202,{id},{success},{err_code},{version}                       OTA result
+    >203,{id}                                                      OTA: Server queued a >201 (accept ack)
     >ERR,{message}                                                 Parse error
 
 Theta is transmitted in radians on the wire.  Builder functions accept degrees
@@ -31,7 +36,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional, Union
 
-from config import COMM
+from config import COMM, OTA
 
 # ---------------------------------------------------------------------------
 # Parsed message dataclass
@@ -59,6 +64,9 @@ class ParsedMessage:
         mag_y:        Magnetic field Y component, present for mag field only.
         mag_z:        Magnetic field Z component, present for mag field only.
         parse_error:  Error message text, present for RESP_PARSE_ERROR only.
+        ota_status:   "READY" / "OK" / "ERR", present for OTA upload status only.
+        ota_success:  True/False, present for OTA result only.
+        ota_version:  Reported firmware version, present for OTA result only.
         raw:          The original raw string for logging / debug.
     """
 
@@ -75,6 +83,9 @@ class ParsedMessage:
     mag_y: Optional[float] = None
     mag_z: Optional[float] = None
     parse_error: Optional[str] = None
+    ota_status: Optional[str] = None
+    ota_success: Optional[bool] = None
+    ota_version: Optional[int] = None
     raw: str = ""
 
 
@@ -190,6 +201,38 @@ def build_ping() -> bytes:
     return f"{COMM.MSG_PREFIX}{COMM.CMD_PING}{COMM.TERMINATOR}".encode(COMM.ENCODING)
 
 
+def build_ota_upload_begin(size: int, crc32: int) -> bytes:
+    """Build an OTA upload-begin command (cmd_id=200).
+
+    The Server replies ``>200,READY`` once ready to receive; the caller must
+    then write exactly ``size`` raw firmware bytes to the same connection.
+
+    Format: ``>200,{size},{crc32}\\n``
+    """
+    line = (
+        f"{COMM.MSG_PREFIX}{OTA.CMD_UPLOAD_BEGIN}"
+        f"{COMM.DELIMITER}{size}"
+        f"{COMM.DELIMITER}{crc32}"
+        f"{COMM.TERMINATOR}"
+    )
+    return line.encode(COMM.ENCODING)
+
+
+def build_ota_start(piece_id: int, version: int) -> bytes:
+    """Build an OTA start command (cmd_id=201): push the firmware already
+    staged on the Server (via build_ota_upload_begin) out to one bot.
+
+    Format: ``>201,{id},{version}\\n``
+    """
+    line = (
+        f"{COMM.MSG_PREFIX}{OTA.CMD_START}"
+        f"{COMM.DELIMITER}{piece_id}"
+        f"{COMM.DELIMITER}{version}"
+        f"{COMM.TERMINATOR}"
+    )
+    return line.encode(COMM.ENCODING)
+
+
 # ---------------------------------------------------------------------------
 # Response parser  (ESP32 → host)
 # ---------------------------------------------------------------------------
@@ -283,6 +326,38 @@ def parse_line(raw: Union[str, bytes]) -> ParsedMessage:
         if msg_id == COMM.RESP_PONG and len(parts) == 1:
             # >255
             return ParsedMessage(msg_type=COMM.RESP_PONG, raw=raw)
+
+        if msg_id == OTA.RESP_UPLOAD_STATUS and len(parts) >= 2:
+            # >200,READY  or  >200,OK  or  >200,ERR,{message}
+            status = parts[1]
+            detail = COMM.DELIMITER.join(parts[2:]) if len(parts) > 2 else None
+            return ParsedMessage(
+                msg_type=OTA.RESP_UPLOAD_STATUS,
+                ota_status=status,
+                parse_error=detail,
+                raw=raw,
+            )
+
+        if msg_id == OTA.RESP_OTA_ACCEPTED and len(parts) == 2:
+            # >203,{id} — Server accepted (queued) an OTA start command. Proof
+            # only that the Server queued it, not that the bot received the
+            # ESP-NOW broadcast; the definitive signal remains the >202 result.
+            return ParsedMessage(
+                msg_type=OTA.RESP_OTA_ACCEPTED,
+                piece_id=int(parts[1], 0),
+                raw=raw,
+            )
+
+        if msg_id == OTA.RESP_RESULT and len(parts) == 5:
+            # >202,{id},{success},{err_code},{version}
+            return ParsedMessage(
+                msg_type=OTA.RESP_RESULT,
+                piece_id=int(parts[1], 0),
+                ota_success=bool(int(parts[2])),
+                err_type=int(parts[3]),
+                ota_version=int(parts[4]),
+                raw=raw,
+            )
 
     except (ValueError, IndexError):
         pass
