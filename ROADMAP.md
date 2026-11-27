@@ -3,18 +3,18 @@
 This file provides an overview of the direction this project is heading, broken out by each sub-project
 Last updated September 8, 2026
 
-## CAD (https://cad.onshape.com/documents/4f8eaef75458146767928ab5/w/f159d6d65b9091531e1ead34/e/13b51722310f27710438c727?renderMode=0&uiState=6aa0a6ac3ed7120f46e7fd94)
+## [CAD](https://cad.onshape.com/documents/4f8eaef75458146767928ab5/w/f159d6d65b9091531e1ead34/e/13b51722310f27710438c727?renderMode=0&uiState=6aa0a6ac3ed7120f46e7fd94)
 
-Short term
+### Short term
 - Finish clock
 - Finish board
 - Finish toppers
 
-Next rev
+### Next rev
 - Strengthen topper retainer tabs (requires pcb outline changes)
 - Figure out some way for more repeatable wheel protrusion, make it adjustable somehow?
 
-## PCBs (https://github.com/DDeGonge/MiniBot/tree/main/pcbs)
+## [PCBs](https://github.com/DDeGonge/MiniBot/tree/main/pcbs)
 
 ### MiniBot Mainboard
 - Fix the charge status led polarity, oops
