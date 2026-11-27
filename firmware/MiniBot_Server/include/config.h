@@ -38,20 +38,15 @@
 
 // Shared GPIO pin for electromagnet direction
 const uint8_t EMAG_DIR_PIN = 32;
-const bool flip_emag_direction = true;
 
-// Per-electromagnet enable pin numbers. If on IO expander, Port A is 0-7, B is
-// 8-15
-const uint8_t EMAG_EN_PINS[EMAG_COUNT] = {
-    2, // EMAG 1: native GPIO 2
-    0, // EMAG 2: expander pin 0
-    1, // EMAG 3: expander pin 1
-};
-
-const bool EMAG_EN_ON_EXPANDER[EMAG_COUNT] = {
-    false,
-    true,
-    true,
+// Per-electromagnet config rows: { enable pin, on IO expander, flip direction }
+// Enable pins are native GPIO numbers; when the enable pin sits on the IO
+// expander, Port A is 0-7 and Port B is 8-15. flip direction makes "forward"
+// correct for how that electromagnet is mounted (the direction pin is shared).
+const uint8_t EMAG_CONFIG[EMAG_COUNT][3] = {
+    {2, false, true}, // EMAG 1: native GPIO 2
+    {0, true, true},  // EMAG 2: expander pin 0
+    {1, true, true},  // EMAG 3: expander pin 1
 };
 
 // ============= Joystick Configuration =============

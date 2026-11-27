@@ -38,9 +38,11 @@ uint32_t getTimeToNextFrameUs();
 class Electromagnet {
 public:
   Electromagnet();
-  Electromagnet(bool on_io_expander, uint8_t en_pin,
+  Electromagnet(uint8_t en_pin, bool on_io_expander,
+                bool flip_direction = false,
                 uint8_t dir_pin = EMAG_DIR_PIN);
-  void init(bool on_io_expander, uint8_t en_pin,
+  void init(uint8_t en_pin, bool on_io_expander,
+            bool flip_direction = false,
             uint8_t dir_pin = EMAG_DIR_PIN);
   void set(bool enabled, bool forward);
   void enable(bool enabled);
@@ -54,6 +56,7 @@ private:
   bool on_io_expander = false;
   bool enabled = false;
   bool forward = true;
+  bool flip_direction = false;
 };
 
 #endif // ELECTROMAGNET_TASK_H
